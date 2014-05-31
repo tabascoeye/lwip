@@ -8,6 +8,8 @@ I created this fork to see if GitHub and its [powerful integrations](https://git
 
 **Consider this repository as an experiment for now!**
 
+See the [original REAMDE file](https://github.com/tabascoeye/lwip-fork/blob/master/README) for more info.
+
 LICENSE
 =======
 
