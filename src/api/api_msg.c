@@ -665,8 +665,10 @@ netconn_free(struct netconn *conn)
     !sys_mbox_valid(&conn->acceptmbox));
 #endif /* LWIP_TCP */
 
-  sys_sem_free(&conn->op_completed);
-  sys_sem_set_invalid(&conn->op_completed);
+  if (sys_sem_valid(&conn->op_completed)) {
+    sys_sem_free(&conn->op_completed);
+    sys_sem_set_invalid(&conn->op_completed);
+  }
 
   memp_free(MEMP_NETCONN, conn);
 }
