@@ -424,6 +424,22 @@ netif_set_ipaddr(struct netif *netif, ip_addr_t *ipaddr)
     }
   }
 #endif
+#if LWIP_UDP
+  struct udp_pcb *upcb;
+
+  /* address is actually being changed? */
+  if(ipaddr && (ip_addr_cmp(ipaddr, &(netif->ip_addr))) == 0) {
+    for (upcb = udp_pcbs; upcb != NULL; upcb = upcb->next) {
+      /* PCB bound to current local interface address? */
+      if ((!(ip_addr_isany(ipX_2_ip(&upcb->local_ip)))) &&
+          (ip_addr_cmp(ipX_2_ip(&upcb->local_ip), &(netif->ip_addr)))) {
+        /* The PCB is bound to the old ipaddr and
+         * is set to bound to the new one instead */
+        ip_addr_set(ipX_2_ip(&upcb->local_ip), ipaddr);
+      }
+    }
+  }
+#endif
   snmp_delete_ipaddridx_tree(netif);
   snmp_delete_iprteidx_tree(0,netif);
   /* set new IP address to netif */
