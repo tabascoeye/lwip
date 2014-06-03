@@ -919,7 +919,7 @@ void snmp_get_sysobjid_ptr(const struct snmp_obj_id **oid)
 /**
  * Initializes sysObjectID value.
  *
- * @param oid points to stuct snmp_obj_id to copy
+ * @param oid points to struct snmp_obj_id to copy
  */
 void snmp_set_sysobjid(const struct snmp_obj_id *oid)
 {
@@ -1168,7 +1168,7 @@ void snmp_delete_arpidx_tree(struct netif *ni, ip_addr_t *ip)
       }
       else if (fc == 2)
       {
-        /* reset delete (2 or more childs) */
+        /* reset delete (2 or more children) */
         del_cnt = 0;
         at_rn = (struct mib_list_rootnode*)(at_n->nptr);
       }
@@ -1370,7 +1370,7 @@ void snmp_delete_ipaddridx_tree(struct netif *ni)
     }
     else if (fc == 2)
     {
-      /* reset delete (2 or more childs) */
+      /* reset delete (2 or more children) */
       del_cnt = 0;
       ipa_rn = (struct mib_list_rootnode*)(ipa_n->nptr);
     }
@@ -1532,7 +1532,7 @@ void snmp_delete_iprteidx_tree(u8_t dflt, struct netif *ni)
       }
       else if (fc == 2)
       {
-        /* reset delete (2 or more childs) */
+        /* reset delete (2 or more children) */
         del_cnt = 0;
         iprte_rn = (struct mib_list_rootnode*)(iprte_n->nptr);
       }
@@ -1860,7 +1860,7 @@ void snmp_delete_udpidx_tree(struct udp_pcb *pcb)
       }
       else if (fc == 2)
       {
-        /* reset delete (2 or more childs) */
+        /* reset delete (2 or more children) */
         del_cnt = 0;
         udp_rn = (struct mib_list_rootnode*)(udp_n->nptr);
       }

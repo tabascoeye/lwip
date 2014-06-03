@@ -302,7 +302,7 @@ void sys_timeouts_init(void)
 #endif /* LWIP_IPV6 */
 
 #if NO_SYS
-  /* Initialise timestamp for sys_check_timeouts */
+  /* Initialize timestamp for sys_check_timeouts */
   timeouts_last_time = sys_now();
 #endif
 }
@@ -513,7 +513,7 @@ sys_timeouts_mbox_fetch(sys_mbox_t *mbox, void **msg)
     }
 
     if (time_needed == SYS_ARCH_TIMEOUT) {
-      /* If time == SYS_ARCH_TIMEOUT, a timeout occured before a message
+      /* If time == SYS_ARCH_TIMEOUT, a timeout occurred before a message
          could be fetched. We should now call the timeout handler and
          deallocate the memory allocated for the timeout. */
       tmptimeout = next_timeout;

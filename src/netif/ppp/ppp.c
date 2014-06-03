@@ -521,7 +521,7 @@ ppp_sighup(ppp_pcb *pcb)
 /*
  * Free the control block, clean everything except the PPP PCB itself
  * and the netif, it allows you to change the underlying PPP protocol
- * (eg. from PPPoE to PPPoS to switch from DSL to GPRS) without losing
+ * (e.g. from PPPoE to PPPoS to switch from DSL to GPRS) without losing
  * your PPP and netif handlers.
  *
  * This can only be called if PPP is in the dead phase.
@@ -1646,7 +1646,7 @@ pppos_input(ppp_pcb *pcb, u_char *s, int l)
       }
     /* Process other characters. */
     } else {
-      /* Unencode escaped characters. */
+      /* Decode escaped characters. */
       if (pcrx->in_escaped) {
         pcrx->in_escaped = 0;
         cur_char ^= PPP_TRANS;

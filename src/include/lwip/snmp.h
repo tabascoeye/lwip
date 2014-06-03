@@ -66,7 +66,7 @@ enum snmp_ifType {
   snmp_ifType_lapb,
   snmp_ifType_sdlc,
   snmp_ifType_ds1,                    /* T-1 */
-  snmp_ifType_e1,                     /* european equiv. of T-1 */
+  snmp_ifType_e1,                     /* European equiv. of T-1 */
   snmp_ifType_basicISDN,
   snmp_ifType_primaryISDN,            /* proprietary serial */
   snmp_ifType_propPointToPointSerial,

@@ -579,7 +579,7 @@ dhcp_handle_ack(struct netif *netif)
  * Using this prevents dhcp_start to allocate it using mem_malloc.
  *
  * @param netif the netif for which to set the struct dhcp
- * @param dhcp (uninitialised) dhcp struct allocated by the application
+ * @param dhcp (uninitialized) dhcp struct allocated by the application
  */
 void
 dhcp_set_struct(struct netif *netif, struct dhcp *dhcp)
@@ -1330,7 +1330,7 @@ dhcp_option_hostname(struct dhcp *dhcp, struct netif *netif)
  * Extract the DHCP message and the DHCP options, each into a contiguous
  * piece of memory. As a DHCP message is variable sized by its options,
  * and also allows overriding some fields for options, the easy approach
- * is to first unfold the options into a conitguous piece of memory, and
+ * is to first unfold the options into a continuous piece of memory, and
  * use that further on.
  *
  */
@@ -1644,7 +1644,7 @@ dhcp_create_msg(struct netif *netif, struct dhcp *dhcp, u8_t message_type)
   u16_t i;
 #ifndef DHCP_GLOBAL_XID
   /** default global transaction identifier starting value (easy to match
-   *  with a packet analyser). We simply increment for each new request.
+   *  with a packet analyzer). We simply increment for each new request.
    *  Predefine DHCP_GLOBAL_XID to a better value or a function call to generate one
    *  at runtime, any supporting function prototypes can be defined in DHCP_GLOBAL_XID_HEADER */
 #if DHCP_CREATE_RAND_XID && defined(LWIP_RAND)

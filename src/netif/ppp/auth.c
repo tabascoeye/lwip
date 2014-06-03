@@ -1711,7 +1711,7 @@ check_passwd(unit, auser, userlen, apasswd, passwdlen, msg)
 
 /*
  * null_login - Check if a username of "" and a password of "" are
- * acceptable, and iff so, set the list of acceptable IP addresses
+ * acceptable, and if so, set the list of acceptable IP addresses
  * and return 1.
  */
 static int

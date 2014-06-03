@@ -156,7 +156,7 @@ snmp_ok_response(struct snmp_msg_pstat *msg_ps)
  * Service an internal or external event for SNMP GET.
  *
  * @param request_id identifies requests from 0 to (SNMP_CONCURRENT_REQUESTS-1)
- * @param msg_ps points to the assosicated message process state
+ * @param msg_ps points to the associated message process state
  */
 static void
 snmp_msg_get_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
@@ -172,7 +172,7 @@ snmp_msg_get_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
     en = msg_ps->ext_mib_node;
     np = msg_ps->ext_name_ptr;
 
-    /* translate answer into a known lifeform */
+    /* translate answer into a known life form */
     en->get_object_def_a(request_id, np.ident_len, np.ident, &msg_ps->ext_object_def);
     if ((msg_ps->ext_object_def.instance != MIB_OBJECT_NONE) &&
         (msg_ps->ext_object_def.access & MIB_ACCESS_READ))
@@ -205,7 +205,7 @@ snmp_msg_get_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
       /* move name from invb to outvb */
       vb->ident = msg_ps->vb_ptr->ident;
       vb->ident_len = msg_ps->vb_ptr->ident_len;
-      /* ensure this memory is refereced once only */
+      /* ensure this memory is referenced once only */
       msg_ps->vb_ptr->ident = NULL;
       msg_ps->vb_ptr->ident_len = 0;
 
@@ -318,7 +318,7 @@ snmp_msg_get_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
               /* move name from invb to outvb */
               vb->ident = msg_ps->vb_ptr->ident;
               vb->ident_len = msg_ps->vb_ptr->ident_len;
-              /* ensure this memory is refereced once only */
+              /* ensure this memory is referenced once only */
               msg_ps->vb_ptr->ident = NULL;
               msg_ps->vb_ptr->ident_len = 0;
 
@@ -387,7 +387,7 @@ snmp_msg_get_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
  * Service an internal or external event for SNMP GETNEXT.
  *
  * @param request_id identifies requests from 0 to (SNMP_CONCURRENT_REQUESTS-1)
- * @param msg_ps points to the assosicated message process state
+ * @param msg_ps points to the associated message process state
  */
 static void
 snmp_msg_getnext_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
@@ -532,7 +532,7 @@ snmp_msg_getnext_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
  * Service an internal or external event for SNMP SET.
  *
  * @param request_id identifies requests from 0 to (SNMP_CONCURRENT_REQUESTS-1)
- * @param msg_ps points to the assosicated message process state
+ * @param msg_ps points to the associated message process state
  */
 static void
 snmp_msg_set_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
@@ -548,7 +548,7 @@ snmp_msg_set_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
     en = msg_ps->ext_mib_node;
     np = msg_ps->ext_name_ptr;
 
-    /* translate answer into a known lifeform */
+    /* translate answer into a known life form */
     en->get_object_def_a(request_id, np.ident_len, np.ident, &msg_ps->ext_object_def);
     if (msg_ps->ext_object_def.instance != MIB_OBJECT_NONE)
     {
@@ -601,7 +601,7 @@ snmp_msg_set_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
     en = msg_ps->ext_mib_node;
     np = msg_ps->ext_name_ptr;
 
-    /* translate answer into a known lifeform */
+    /* translate answer into a known life form */
     en->get_object_def_a(request_id, np.ident_len, np.ident, &msg_ps->ext_object_def);
     if (msg_ps->ext_object_def.instance != MIB_OBJECT_NONE)
     {
@@ -625,7 +625,7 @@ snmp_msg_set_event(u8_t request_id, struct snmp_msg_pstat *msg_ps)
     en->set_value_a(request_id, &msg_ps->ext_object_def,
       msg_ps->vb_ptr->value_len, msg_ps->vb_ptr->value);
 
-    /** @todo use set_value_pc() if toobig */
+    /** @todo use set_value_pc() if too big */
     msg_ps->state = SNMP_MSG_INTERNAL_SET_VALUE;
     msg_ps->vb_idx += 1;
   }
@@ -906,7 +906,7 @@ snmp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, ip_addr_t *addr, u16_t
  * @param p points to pbuf chain of SNMP message (UDP payload)
  * @param ofs points to first octet of SNMP message
  * @param pdu_len the length of the UDP payload
- * @param ofs_ret returns the ofset of the variable bindings
+ * @param ofs_ret returns the offset of the variable bindings
  * @param m_stat points to the current message request state return
  * @return
  * - ERR_OK SNMP header is sane and accepted

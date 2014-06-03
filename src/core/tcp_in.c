@@ -541,7 +541,7 @@ tcp_listen_input(struct tcp_pcb_listen *pcb)
     npcb->state = SYN_RCVD;
     npcb->rcv_nxt = seqno + 1;
     npcb->rcv_ann_right_edge = npcb->rcv_nxt;
-    npcb->snd_wl1 = seqno - 1;/* initialise to seqno-1 to force window update */
+    npcb->snd_wl1 = seqno - 1;/* Initialize to seqno-1 to force window update */
     npcb->callback_arg = pcb->callback_arg;
 #if LWIP_CALLBACK_API
     npcb->accept = pcb->accept;
@@ -697,7 +697,7 @@ tcp_process(struct tcp_pcb *pcb)
       pcb->lastack = ackno;
       pcb->snd_wnd = SND_WND_SCALE(pcb, tcphdr->wnd);
       pcb->snd_wnd_max = pcb->snd_wnd;
-      pcb->snd_wl1 = seqno - 1; /* initialise to seqno - 1 to force window update */
+      pcb->snd_wl1 = seqno - 1; /* Initialize to seqno - 1 to force window update */
       pcb->state = ESTABLISHED;
 
 #if TCP_CALCULATE_EFF_SEND_MSS
@@ -726,7 +726,7 @@ tcp_process(struct tcp_pcb *pcb)
         pcb->nrtx = 0;
       }
 
-      /* Call the user specified function to call when sucessfully
+      /* Call the user specified function to call when successfully
        * connected. */
       TCP_EVENT_CONNECTED(pcb, ERR_OK, err);
       if (err == ERR_ABRT) {
@@ -1066,7 +1066,7 @@ tcp_receive(struct tcp_pcb *pcb)
                                     ntohl(pcb->unacked->tcphdr->seqno) + TCP_TCPLEN(pcb->unacked): 0));
 
       /* Remove segment from the unacknowledged list if the incoming
-         ACK acknowlegdes them. */
+         ACK acknowledges them. */
       while (pcb->unacked != NULL &&
              TCP_SEQ_LEQ(ntohl(pcb->unacked->tcphdr->seqno) +
                          TCP_TCPLEN(pcb->unacked), ackno)) {
@@ -1186,7 +1186,7 @@ tcp_receive(struct tcp_pcb *pcb)
 
   /* If the incoming segment contains data, we must process it
      further unless the pcb already received a FIN.
-     (RFC 793, chapeter 3.9, "SEGMENT ARRIVES" in states CLOSE-WAIT, CLOSING,
+     (RFC 793, chapter 3.9, "SEGMENT ARRIVES" in states CLOSE-WAIT, CLOSING,
      LAST-ACK and TIME-WAIT: "Ignore the segment text.") */
   if ((tcplen > 0) && (pcb->state < CLOSE_WAIT)) {
     /* This code basically does three things:
@@ -1487,7 +1487,7 @@ tcp_receive(struct tcp_pcb *pcb)
                 }
                 break;
               } else {
-                /* Either the lenghts are the same or the incoming
+                /* Either the lengths are the same or the incoming
                    segment was smaller than the old one; in either
                    case, we ditch the incoming segment. */
                 break;
@@ -1597,7 +1597,7 @@ tcp_receive(struct tcp_pcb *pcb)
 #endif /* TCP_QUEUE_OOSEQ */
       }
     } else {
-      /* The incoming segment is not withing the window. */
+      /* The incoming segment is not within the window. */
       tcp_send_empty_ack(pcb);
     }
   } else {

@@ -34,7 +34,7 @@
 /* Multilink support
  *
  * Multilink uses Samba TDB (Trivial Database Library), which
- * we cannot port, because it needs a filesystem.
+ * we cannot port, because it needs a file system.
  *
  * We have to choose between doing a memory-shared TDB-clone,
  * or dropping multilink support at all.

@@ -455,7 +455,7 @@ END_TEST
 static char data_full_wnd[TCP_WND];
 
 /** create multiple segments and pass them to tcp_input with the first segment missing
- * to simulate overruning the rxwin with ooseq queueing enabled */
+ * to simulate overrunning the rxwin with ooseq queueing enabled */
 START_TEST(test_tcp_recv_ooseq_overrun_rxwin)
 {
 #if !TCP_OOSEQ_MAX_BYTES && !TCP_OOSEQ_MAX_PBUFS
@@ -731,7 +731,7 @@ check_rx_counters(struct tcp_pcb *pcb, struct test_tcp_counters *counters, u32_t
  * - data after FIN (len=1) (invalid)
  * - 2nd FIN (invalid)
  *
- * the parameter 'delay_packet' is a bitmask that choses which on these packets is ooseq
+ * the parameter 'delay_packet' is a bitmask that chooses which on these packets is ooseq
  */
 static void test_tcp_recv_ooseq_double_FINs(int delay_packet)
 {
@@ -901,7 +901,7 @@ static void test_tcp_recv_ooseq_double_FINs(int delay_packet)
 }
 
 /** create multiple segments and pass them to tcp_input with the first segment missing
- * to simulate overruning the rxwin with ooseq queueing enabled */
+ * to simulate overrunning the rxwin with ooseq queueing enabled */
 #define FIN_TEST(name, num) \
   START_TEST(name) \
   { \

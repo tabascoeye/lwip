@@ -213,7 +213,7 @@ tcp_create_segment(struct tcp_pcb *pcb, struct pbuf *p, u8_t flags, u32_t seqno,
  * @param length size of the pbuf's payload.
  * @param max_length maximum usable size of payload+oversize.
  * @param oversize pointer to a u16_t that will receive the number of usable tail bytes.
- * @param pcb The TCP connection that willo enqueue the pbuf.
+ * @param pcb The TCP connection that will enqueue the pbuf.
  * @param apiflags API flags given to tcp_write.
  * @param first_seg true when this pbuf will be used in the first enqueued segment.
  * @param 
@@ -291,7 +291,7 @@ tcp_seg_add_chksum(u16_t chksum, u16_t len, u16_t *seg_chksum,
 /** Checks if tcp_write is allowed or not (checks state, snd_buf and snd_queuelen).
  *
  * @param pcb the tcp pcb to check for
- * @param len length of data to send (checked agains snd_buf)
+ * @param len length of data to send (checked against snd_buf)
  * @return ERR_OK if tcp_write is allowed to proceed, another err_t otherwise
  */
 static err_t
@@ -663,7 +663,7 @@ tcp_write(struct tcp_pcb *pcb, const void *arg, u16_t len, u8_t apiflags)
     last_unsent->len += concat_p->tot_len;
 #if TCP_CHECKSUM_ON_COPY
     if (concat_chksummed) {
-      /*if concat checksumm swapped - swap it back */
+      /*if concat checksum swapped - swap it back */
       if (concat_chksum_swapped){
         concat_chksum = SWAP_BYTES_IN_WORD(concat_chksum);
       }

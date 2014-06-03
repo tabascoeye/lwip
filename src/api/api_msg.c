@@ -380,7 +380,7 @@ err_tcp(void *arg, err_t err)
   }
   /* pass NULL-message to acceptmbox to wake up pending accept */
   if (sys_mbox_valid(&conn->acceptmbox)) {
-    /* use trypost to preven deadlock */
+    /* use trypost to prevent deadlock */
     sys_mbox_trypost(&conn->acceptmbox, NULL);
   }
 
@@ -674,7 +674,7 @@ netconn_free(struct netconn *conn)
 }
 
 /**
- * Delete rcvmbox and acceptmbox of a netconn and free the left-over data in
+ * Delete recvmbox and acceptmbox of a netconn and free the left-over data in
  * these mboxes
  *
  * @param conn the netconn to free

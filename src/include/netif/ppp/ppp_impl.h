@@ -243,7 +243,7 @@ extern u8_t	bundle_terminating;
 #endif
 
 #ifdef MAXOCTETS
-extern unsigned int maxoctets;	     /* Maximum octetes per session (in bytes) */
+extern unsigned int maxoctets;	     /* Maximum octets per session (in bytes) */
 extern int       maxoctets_dir;      /* Direction :
 				      0 - in+out (default)
 				      1 - in

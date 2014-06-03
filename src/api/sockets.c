@@ -169,7 +169,7 @@ struct lwip_select_cb {
   fd_set *writeset;
   /** unimplemented: exceptset passed to select */
   fd_set *exceptset;
-  /** don't signal the same semaphore twice: set to 1 when signalled */
+  /** don't signal the same semaphore twice: set to 1 when signaled */
   int sem_signalled;
   /** semaphore to wake up a task waiting for select */
   sys_sem_t sem;
@@ -191,7 +191,7 @@ union sockaddr_aligned {
 static struct lwip_sock sockets[NUM_SOCKETS];
 /** The global list of tasks waiting for select */
 static struct lwip_select_cb *select_cb_list;
-/** This counter is increased from lwip_select when the list is chagned
+/** This counter is increased from lwip_select when the list is changed
     and checked in event_callback to see if it has changed. */
 static volatile int select_cb_ctr;
 
@@ -236,7 +236,7 @@ static const int err_to_errno_table[] = {
   set_errno(sk->err); \
 } while (0)
 
-/* Forward delcaration of some functions */
+/* Forward declaration of some functions */
 static void event_callback(struct netconn *conn, enum netconn_evt evt, u16_t len);
 static void lwip_getsockopt_internal(void *arg);
 static void lwip_setsockopt_internal(void *arg);
@@ -483,7 +483,7 @@ lwip_bind(int s, const struct sockaddr *name, socklen_t namelen)
     return -1;
   }
 
-  /* check size, familiy and alignment of 'name' */
+  /* check size, family and alignment of 'name' */
   LWIP_ERROR("lwip_bind: invalid address", (IS_SOCK_ADDR_LEN_VALID(namelen) &&
              IS_SOCK_ADDR_TYPE_VALID(name) && IS_SOCK_ADDR_ALIGNED(name)),
              sock_set_errno(sock, err_to_errno(ERR_ARG)); return -1;);
@@ -558,7 +558,7 @@ lwip_connect(int s, const struct sockaddr *name, socklen_t namelen)
     ipX_addr_t remote_addr;
     u16_t remote_port;
 
-    /* check size, familiy and alignment of 'name' */
+    /* check size, family and alignment of 'name' */
     LWIP_ERROR("lwip_connect: invalid address", IS_SOCK_ADDR_LEN_VALID(namelen) &&
                IS_SOCK_ADDR_TYPE_VALID_OR_UNSPEC(name) && IS_SOCK_ADDR_ALIGNED(name),
                sock_set_errno(sock, err_to_errno(ERR_ARG)); return -1;);
@@ -1232,7 +1232,7 @@ lwip_select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset,
     }
 
     /* Call lwip_selscan again: there could have been events between
-       the last scan (whithout us on the list) and putting us on the list! */
+       the last scan (without us on the list) and putting us on the list! */
     nready = lwip_selscan(maxfdp1, readset, writeset, exceptset, &lreadset, &lwriteset, &lexceptset);
     if (!nready) {
       /* Still none ready, just wait to be woken */
@@ -1388,7 +1388,7 @@ event_callback(struct netconn *conn, enum netconn_evt evt, u16_t len)
 again:
   for (scb = select_cb_list; scb != NULL; scb = scb->next) {
     if (scb->sem_signalled == 0) {
-      /* semaphore not signalled yet */
+      /* semaphore not signaled yet */
       int do_signal = 0;
       /* Test this select call for our socket */
       if (sock->rcvevent > 0) {
@@ -1409,7 +1409,7 @@ again:
       if (do_signal) {
         scb->sem_signalled = 1;
         /* Don't call SYS_ARCH_UNPROTECT() before signaling the semaphore, as this might
-           lead to the select thread taking itself off the list, invalidagin the semaphore. */
+           lead to the select thread taking itself off the list, invalidating the semaphore. */
         sys_sem_signal(&scb->sem);
       }
     }
@@ -1827,7 +1827,7 @@ lwip_getsockopt_internal(void *arg)
       break;
 
     case SO_ERROR:
-      /* only overwrite ERR_OK or tempoary errors */
+      /* only overwrite ERR_OK or temporary errors */
       if ((sock->err == 0) || (sock->err == EINPROGRESS)) {
         sock_set_errno(sock, err_to_errno(sock->conn->last_err));
       } 

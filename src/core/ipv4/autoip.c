@@ -48,7 +48,7 @@
  * 
  * If you don't use tcpip.c (so, don't call, you don't call tcpip_init):
  * - First, call autoip_init().
- * - call autoip_tmr() all AUTOIP_TMR_INTERVAL msces,
+ * - call autoip_tmr() all AUTOIP_TMR_INTERVAL msecs,
  *   that should be defined in autoip.h.
  *   I recommend a value of 100. The value must divide 1000 with a remainder almost 0.
  *   Possible values are 1000, 500, 333, 250, 200, 166, 142, 125, 111, 100 ....
@@ -127,7 +127,7 @@ static void autoip_start_probing(struct netif *netif);
  * Using this prevents autoip_start to allocate it using mem_malloc.
  *
  * @param netif the netif for which to set the struct autoip
- * @param dhcp (uninitialised) dhcp struct allocated by the application
+ * @param dhcp (uninitialized) dhcp struct allocated by the application
  */
 void
 autoip_set_struct(struct netif *netif, struct autoip *autoip)
@@ -342,14 +342,14 @@ autoip_start_probing(struct netif *netif)
       ip4_addr3_16(&netif->autoip->llipaddr), ip4_addr4_16(&netif->autoip->llipaddr)));
 
   /* time to wait to first probe, this is randomly
-   * choosen out of 0 to PROBE_WAIT seconds.
+   * chosen out of 0 to PROBE_WAIT seconds.
    * compliant to RFC 3927 Section 2.2.1
    */
   autoip->ttw = (u16_t)(LWIP_AUTOIP_RAND(netif) % (PROBE_WAIT * AUTOIP_TICKS_PER_SECOND));
 
   /*
    * if we tried more then MAX_CONFLICTS we must limit our rate for
-   * accquiring and probing address
+   * acquiring and probing address
    * compliant to RFC 3927 Section 2.2.1
    */
   if (autoip->tried_llipaddr > MAX_CONFLICTS) {

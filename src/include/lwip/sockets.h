@@ -126,7 +126,7 @@ struct lwip_setgetsockopt_data {
   void *optval;
   /** size of *optval */
   socklen_t *optlen;
-  /** if an error occures, it is temporarily stored here */
+  /** if an error occurs, it is temporarily stored here */
   err_t err;
 };
 
@@ -339,7 +339,6 @@ typedef struct ip_mreq {
 
 /* Socket I/O Controls: unimplemented */
 #ifndef SIOCSHIWAT
-#define SIOCSHIWAT  _IOW('s',  0, unsigned long)  /* set high watermark */
 #define SIOCGHIWAT  _IOR('s',  1, unsigned long)  /* get high watermark */
 #define SIOCSLOWAT  _IOW('s',  2, unsigned long)  /* set low watermark */
 #define SIOCGLOWAT  _IOR('s',  3, unsigned long)  /* get low watermark */
