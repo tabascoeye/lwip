@@ -1,4 +1,4 @@
-lwip-fork
+lwip-fork  [![Build Status](https://travis-ci.org/tabascoeye/lwip.svg)](https://travis-ci.org/tabascoeye/lwip)
 =========
 
 a fork of the light-weight IP stack, originally created by Adam Dunkels.
