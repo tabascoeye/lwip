@@ -4,7 +4,7 @@ lwip-fork  [![Build Status](https://travis-ci.org/tabascoeye/lwip.svg)](https://
 a fork of the light-weight IP stack, originally created by Adam Dunkels.
 LwIP is maintained at [savannah](http://savannah.nongnu.org/projects/lwip/) and more info is available in the [wiki](http://lwip.wikia.com/wiki/LwIP_Wiki)
 
-I created this fork to see if GitHub and its [powerful integrations](https://github.com/integrations) like [Travis-CI](http://travis-ci.org) could help LwIP to speed up the release cycle a bit.
+I created this fork to see if GitHub and its [powerful integrations](https://github.com/integrations) like [Travis-CI](http://travis-ci.org), [Coveralls](https://coveralls.io) and [Gitter](https://gitter.im) could help LwIP to speed up the release cycle a bit.
 
 **Consider this repository as an experiment for now!**
 
