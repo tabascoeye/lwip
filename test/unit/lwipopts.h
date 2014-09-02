@@ -30,7 +30,33 @@
  *
  */
 #ifndef LWIP_HDR_LWIPOPTS_H__
-#define LWIP_HDR_LWIPOPTS_H__
+#define LWIP_HDR_LWIPOPTS_H_
+
+#define MEMP_OVERFLOW_CHECK 1
+#define MEMP_SANITY_CHECK 1
+#define ARP_QUEUEING 1
+#define ETHARP_SUPPORT_VLAN 1
+#define IP_FORWARD 1
+#define IP_SOF_BROADCAST 1
+#define IP_SOF_BROADCAST_RECV 1
+#define LWIP_RANDOMIZE_INITIAL_LOCAL_PORTS 1
+#define LWIP_AUTOIP 1
+#define LWIP_DHCP_AUTOIP_COOP 1
+#define LWIP_SNMP 1
+#define LWIP_IGMP 1
+#define LWIP_DNS 0 //needed for test_mem.c ==> TODO
+#define LWIP_UDPLITE 1
+#define LWIP_NETBUF_RECVINFO 1
+#define LWIP_NETIF_HOSTNAME 1
+#define LWIP_NETIF_API 0 //not working because of ip_addr_t* ==> TODO
+#define LWIP_NETIF_LINK_CALLBACK        1
+#define LWIP_NETIF_REMOVE_CALLBACK      1
+#define LWIP_NETIF_HWADDRHINT           1
+#define LWIP_NETIF_LOOPBACK             1
+#define LWIP_HAVE_LOOPIF                1
+#define LWIP_HAVE_SLIPIF                0 //not working because sio_* functions missing ==> TODO
+#define LWIP_IPV6                       0 //not working with ip_addr_t* in tcp_helper.c ==> TODO
+
 
 /* Prevent having to link sys_arch.c (we don't test the API layers in unit tests) */
 #define NO_SYS                          1
