@@ -208,10 +208,10 @@ static const int err_to_errno_table[] = {
   EWOULDBLOCK,   /* ERR_WOULDBLOCK -7      Operation would block.   */
   EADDRINUSE,    /* ERR_USE        -8      Address in use.          */
   EALREADY,      /* ERR_ISCONN     -9      Already connected.       */
-  ECONNABORTED,  /* ERR_ABRT       -10     Connection aborted.      */
-  ECONNRESET,    /* ERR_RST        -11     Connection reset.        */
-  ENOTCONN,      /* ERR_CLSD       -12     Connection closed.       */
-  ENOTCONN,      /* ERR_CONN       -13     Not connected.           */
+  ENOTCONN,      /* ERR_CONN       -10     Not connected.           */
+  ECONNABORTED,  /* ERR_ABRT       -11     Connection aborted.      */
+  ECONNRESET,    /* ERR_RST        -12     Connection reset.        */
+  ENOTCONN,      /* ERR_CLSD       -13     Connection closed.       */
   EIO,           /* ERR_ARG        -14     Illegal argument.        */
   -1,            /* ERR_IF         -15     Low-level netif error    */
 };
@@ -2622,23 +2622,28 @@ lwip_fcntl(int s, int cmd, int val)
   struct lwip_sock *sock = get_socket(s);
   int ret = -1;
 
-  if (!sock || !sock->conn) {
+  if (!sock) {
     return -1;
   }
 
   switch (cmd) {
   case F_GETFL:
     ret = netconn_is_nonblocking(sock->conn) ? O_NONBLOCK : 0;
+    sock_set_errno(sock, 0);
     break;
   case F_SETFL:
     if ((val & ~O_NONBLOCK) == 0) {
       /* only O_NONBLOCK, all other bits are zero */
       netconn_set_nonblocking(sock->conn, val & O_NONBLOCK);
       ret = 0;
+      sock_set_errno(sock, 0);
+    } else {
+      sock_set_errno(sock, ENOSYS); /* not yet implemented */
     }
     break;
   default:
     LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_fcntl(%d, UNIMPL: %d, %d)\n", s, cmd, val));
+    sock_set_errno(sock, ENOSYS); /* not yet implemented */
     break;
   }
   return ret;
