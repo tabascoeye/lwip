@@ -901,11 +901,6 @@
 #define DNS_DOES_NAME_CHECK             1
 #endif
 
-/** DNS message max. size. Default value is RFC compliant. */
-#ifndef DNS_MSG_SIZE
-#define DNS_MSG_SIZE                    512
-#endif
-
 /** DNS_LOCAL_HOSTLIST: Implements a local host-to-address list. If enabled,
  *  you have to define
  *    #define DNS_LOCAL_HOSTLIST_INIT {{"host1", 0x123}, {"host2", 0x234}}
@@ -1834,7 +1829,7 @@
 #endif
 #if MSCHAP_SUPPORT
 #undef CHAP_SUPPORT
-#define CHAP_SUPPORT			1	/* MSCHAP require CHAP support */
+#define CHAP_SUPPORT                    1 /* MSCHAP requires CHAP support */
 #endif /* MSCHAP_SUPPORT */
 
 /**
@@ -1922,19 +1917,19 @@
 
 #if CHAP_SUPPORT || EAP_SUPPORT || PPPOL2TP_AUTH_SUPPORT || PPP_MD5_RANDM
 #ifndef LWIP_INCLUDED_POLARSSL_MD5
-#define LWIP_INCLUDED_POLARSSL_MD5	1	/* CHAP, EAP, L2TP AUTH and MD5 Random require MD5 support */
+#define LWIP_INCLUDED_POLARSSL_MD5        1 /* CHAP, EAP, L2TP AUTH and MD5 Random require MD5 support */
 #endif /* LWIP_INCLUDED_POLARSSL_MD5 */
 #endif /* CHAP_SUPPORT || EAP_SUPPORT || PPPOL2TP_AUTH_SUPPORT || PPP_MD5_RANDM */
 
 #if MSCHAP_SUPPORT
 #ifndef LWIP_INCLUDED_POLARSSL_MD4
-#define LWIP_INCLUDED_POLARSSL_MD4	1	/* MSCHAP require MD4 support */
+#define LWIP_INCLUDED_POLARSSL_MD4        1 /* MSCHAP require MD4 support */
 #endif /* LWIP_INCLUDED_POLARSSL_MD4 */
 #ifndef LWIP_INCLUDED_POLARSSL_SHA1
-#define LWIP_INCLUDED_POLARSSL_SHA1	1	/* MSCHAP require SHA1 support */
+#define LWIP_INCLUDED_POLARSSL_SHA1       1 /* MSCHAP require SHA1 support */
 #endif /* LWIP_INCLUDED_POLARSSL_SHA1 */
 #ifndef LWIP_INCLUDED_POLARSSL_DES
-#define LWIP_INCLUDED_POLARSSL_DES	1	/* MSCHAP require DES support */
+#define LWIP_INCLUDED_POLARSSL_DES        1 /* MSCHAP require DES support */
 #endif /* LWIP_INCLUDED_POLARSSL_DES */
 #endif /* MSCHAP_SUPPORT */
 
@@ -1986,20 +1981,20 @@
 #endif /* PPP_SERVER */
 
 #ifndef EAP_DEFREQTIME
-#define	EAP_DEFREQTIME                  6       /* Time to wait for peer request */
+#define EAP_DEFREQTIME                  6       /* Time to wait for peer request */
 #endif
 
 #ifndef EAP_DEFALLOWREQ
-#define	EAP_DEFALLOWREQ                 10      /* max # times to accept requests */
+#define EAP_DEFALLOWREQ                 10      /* max # times to accept requests */
 #endif
 
 #if PPP_SERVER
 #ifndef EAP_DEFTIMEOUT
-#define	EAP_DEFTIMEOUT                  6       /* Timeout (seconds) for rexmit */
+#define EAP_DEFTIMEOUT                  6       /* Timeout (seconds) for rexmit */
 #endif
 
 #ifndef EAP_DEFTRANSMITS
-#define	EAP_DEFTRANSMITS                10      /* max # times to transmit */
+#define EAP_DEFTRANSMITS                10      /* max # times to transmit */
 #endif
 #endif /* PPP_SERVER */
 

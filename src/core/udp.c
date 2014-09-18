@@ -849,7 +849,7 @@ udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p, ip_addr_t *dst_ip,
   err = ipX_output_if_src(PCB_ISIPV6(pcb), q, src_ip, dst_ip, pcb->ttl, pcb->tos, ip_proto, netif);
   NETIF_SET_HWADDRHINT(netif, NULL);
 
-  /* TODO: must this be increased even if error occured? */
+  /* TODO: must this be increased even if error occurred? */
   snmp_inc_udpoutdatagrams();
 
   /* did we chain a separate header pbuf earlier? */
