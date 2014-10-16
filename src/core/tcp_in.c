@@ -685,6 +685,7 @@ tcp_process(struct tcp_pcb *pcb)
       This is protection against CVE-2004-0230 (RST spoofing attack) */
       if (TCP_SEQ_BETWEEN(seqno, pcb->rcv_nxt,
                           pcb->rcv_nxt+pcb->rcv_wnd)) {
+        pcb->snd_nxt = ackno;
         tcp_ack_now(pcb);
       }
       LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_process: unacceptable reset seqno %"U32_F" rcv_nxt %"U32_F"\n",
