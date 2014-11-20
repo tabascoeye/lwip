@@ -672,8 +672,8 @@ tcp_process(struct tcp_pcb *pcb)
 
   /* Process incoming RST segments. */
   if (flags & TCP_RST) {
-    /* First, determine if the reset is acceptable. (in case of RST only if the sequence number matches) */
-    if (ackno == pcb->snd_nxt) {
+    /* First, determine if the reset is acceptable. (in case of RST only if the sequence number matches, special case for SYN_SENT state) */
+    if (((pcb->state == SYN_SENT) && (ackno == pcb->snd_nxt)) || (seqno == pcb->rcv_nxt)) {
       LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_process: Connection RESET\n"));
       LWIP_ASSERT("tcp_input: pcb->state != CLOSED", pcb->state != CLOSED);
       recv_flags |= TF_RESET;

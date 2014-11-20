@@ -152,6 +152,7 @@ netif_init(void)
 #endif /* LWIP_IPV6 */
 
   netif_set_up(&loop_netif);
+  netif_set_link_up(&loop_netif);
 
 #endif /* LWIP_HAVE_LOOPIF */
 }
