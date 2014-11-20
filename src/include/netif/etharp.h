@@ -150,13 +150,13 @@ PACK_STRUCT_END
 /** MEMCPY-like macro to copy to/from struct eth_addr's that are local variables
  * or known to be 32-bit aligned within the protocol header. */
 #ifndef ETHADDR32_COPY
-#define ETHADDR32_COPY(src, dst)  SMEMCPY(src, dst, ETHARP_HWADDR_LEN)
+#define ETHADDR32_COPY(dst, src)  SMEMCPY(dst, src, ETHARP_HWADDR_LEN)
 #endif
 
 /** MEMCPY-like macro to copy to/from struct eth_addr's that are no local
  * variables and known to be 16-bit aligned within the protocol header. */
 #ifndef ETHADDR16_COPY
-#define ETHADDR16_COPY(src, dst)  SMEMCPY(src, dst, ETHARP_HWADDR_LEN)
+#define ETHADDR16_COPY(dst, src)  SMEMCPY(dst, src, ETHARP_HWADDR_LEN)
 #endif
 
 #if LWIP_ARP /* don't build if not configured for use in lwipopts.h */
@@ -185,7 +185,7 @@ struct etharp_q_entry {
 };
 #endif /* ARP_QUEUEING */
 
-#define etharp_init() /* Compatibility define, not init needed. */
+#define etharp_init() /* Compatibility define, no init needed. */
 void etharp_tmr(void);
 s8_t etharp_find_addr(struct netif *netif, ip_addr_t *ipaddr,
          struct eth_addr **eth_ret, ip_addr_t **ip_ret);
