@@ -752,6 +752,16 @@
 #endif
 
 /**
+ * LWIP_DHCP_CHECK_LINK_UP==1: dhcp_start() only really starts if the netif has
+ * NETIF_FLAG_LINK_UP set in its flags. As this is only an optimization and
+ * netif drivers might not set this flag, the default is off. If enabled,
+ * netif_set_link_up() must be called to continue dhcp starting.
+ */
+#ifndef LWIP_DHCP_CHECK_LINK_UP
+#define LWIP_DHCP_CHECK_LINK_UP         0
+#endif
+
+/**
  * LWIP_DHCP_BOOTP_FILE==1: Store offered_si_addr and boot_file_name.
  */
 #ifndef LWIP_DHCP_BOOTP_FILE
@@ -1473,6 +1483,20 @@
 #define LWIP_TCPIP_TIMEOUT              1
 #endif
 
+/** LWIP_NETCONN_SEM_PER_THREAD==1: Use one (thread-local) semaphore per
+ * thread calling socket/netconn functions instead of allocating one
+ * semaphore per netconn (and per select etc.)
+ * ATTENTION: a thread-local semaphore for API calls is needed:
+ * - LWIP_NETCONN_THREAD_SEM_GET() returning a sys_sem_t*
+ * - LWIP_NETCONN_THREAD_SEM_ALLOC() creating the semaphore
+ * - LWIP_NETCONN_THREAD_SEM_FREE() freeing the semaphore
+ * The latter 2 can be invoked up by calling netconn_thread_init()/netconn_thread_cleanup().
+ * Ports may call these for threads created with sys_thread_new().
+ */
+#ifndef LWIP_NETCONN_SEM_PER_THREAD
+#define LWIP_NETCONN_SEM_PER_THREAD     0
+#endif
+
 /*
    ------------------------------------
    ---------- Socket options ----------
@@ -1532,6 +1556,14 @@
  */
 #ifndef LWIP_SO_RCVTIMEO
 #define LWIP_SO_RCVTIMEO                0
+#endif
+
+/**
+ * LWIP_SO_SNDRCVTIMEO_NONSTANDARD==1: SO_RCVTIMEO/SO_SNDTIMEO take an int
+ * (milliseconds, much like winsock does) instead of a struct timeval (default).
+ */
+#ifndef LWIP_SO_SNDRCVTIMEO_NONSTANDARD
+#define LWIP_SO_SNDRCVTIMEO_NONSTANDARD 0
 #endif
 
 /**
@@ -1893,6 +1925,13 @@
  */
 #ifndef ECP_SUPPORT
 #define ECP_SUPPORT                     0
+#endif
+
+/**
+ * DEMAND_SUPPORT==1: Support dial on demand. CURRENTLY NOT SUPPORTED! DO NOT SET!
+ */
+#ifndef DEMAND_SUPPORT
+#define DEMAND_SUPPORT                  0
 #endif
 
 /**

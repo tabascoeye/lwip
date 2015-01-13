@@ -38,11 +38,11 @@
 #define PPP_H
 
 #include "lwip/def.h"
-#include "lwip/sio.h"
 #include "lwip/stats.h"
 #include "lwip/mem.h"
 #include "lwip/netif.h"
 #include "lwip/sys.h"
+#include "lwip/sio.h"
 #include "lwip/timers.h"
 #if PPP_IPV6_SUPPORT
 #include "lwip/ip6_addr.h"
@@ -51,6 +51,10 @@
 /* Disable non-working or rarely used PPP feature, so rarely that we don't want to bloat opt.h with them */
 #ifndef PPP_OPTIONS
 #define PPP_OPTIONS         0
+#endif
+
+#ifndef PPP_NOTIFY
+#define PPP_NOTIFY          0
 #endif
 
 #ifndef PPP_REMOTENAME
@@ -67,10 +71,6 @@
 
 #ifndef PPP_MAXCONNECT
 #define PPP_MAXCONNECT      0
-#endif
-
-#ifndef DEMAND_SUPPORT
-#define DEMAND_SUPPORT      0
 #endif
 
 #ifndef PPP_ALLOWED_ADDRS
@@ -250,8 +250,8 @@ typedef struct ppp_settings_s {
 #endif /* PPP_MAXCONNECT */
 
   /* auth data */
-  char  *user;                         /* Username for PAP */
-  char  *passwd;                       /* Password for PAP, secret for CHAP */
+  const char  *user;                   /* Username for PAP */
+  const char  *passwd;                 /* Password for PAP, secret for CHAP */
 #if PPP_SERVER
   char  our_name   [MAXNAMELEN   + 1]; /* Our name for authentication purposes */
 #endif /* PPP_SERVER */
@@ -379,6 +379,11 @@ struct ppp_pcb_s {
 
   /* flags */
   unsigned int if_up                   :1; /* True when the interface is up. */
+#if PPP_IPV6_SUPPORT
+  unsigned int if6_up                  :1; /* True when the IPv6 interface is up. */
+#else
+  unsigned int                         :1; /* 1 bit of padding */
+#endif /* PPP_IPV6_SUPPORT */
   unsigned int pcomp                   :1; /* Does peer accept protocol compression? */
   unsigned int accomp                  :1; /* Does peer accept addr/ctl compression? */
   unsigned int proxy_arp_set           :1; /* Have created proxy arp entry */
@@ -396,7 +401,7 @@ struct ppp_pcb_s {
 #else
   unsigned int                         :1; /* 1 bit of padding */
 #endif /* PPPOS_SUPPORT && VJ_SUPPORT */
-  unsigned int                         :6; /* 5 bits of padding to round out to 16 bits */
+  unsigned int                         :5; /* 5 bits of padding to round out to 16 bits */
 
 #if PPPOS_SUPPORT
 /* FIXME: there is probably one superfluous */
@@ -465,11 +470,6 @@ struct ppp_pcb_s {
  ************************/
 
 /*
- * Initialize the PPP subsystem.
- */
-int ppp_init(void);
-
-/*
  * Create a new PPP session.
  *
  * This initializes the PPP control block but does not
@@ -515,7 +515,7 @@ void ppp_set_default(ppp_pcb *pcb);
 #define PPPAUTHTYPE_EAP    0x08
 #define PPPAUTHTYPE_ANY    0xff
 
-void ppp_set_auth(ppp_pcb *pcb, u8_t authtype, char *user, char *passwd);
+void ppp_set_auth(ppp_pcb *pcb, u8_t authtype, const char *user, const char *passwd);
 
 #if PPP_NOTIFY_PHASE
 /*

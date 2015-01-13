@@ -312,3 +312,71 @@ Solaris port, don't care.
   4043750fca36e7e0eb90d702e048ad1da4929418
 
 Just release stuff.
+
+
+2014-02-18 - pppd: Add option "stop-bits" to set number of serial port stop bits.
+  ad993a20ee485f0d0e2ac4105221641b200da6e2
+
+Low level serial port, not in the port.
+
+
+2014-03-09 - pppd: Separate IPv6 handling for sifup/sifdown
+  b04d2dc6df5c6b5650fea44250d58757ee3dac4a
+
+Reimplemented.
+
+
+2014-03-09 - pppol2tp: Connect up/down events to notifiers and add IPv6 ones
+  fafbe50251efc7d6b4a8be652d085316e112b34f
+
+Not in the port.
+
+
+2014-03-09 - pppd: Add declarations to eliminate compile warnings
+  50967962addebe15c7a7e63116ff46a0441dc464
+
+We are handling compilation warnings on our own
+
+
+2014-03-09 - pppd: Eliminate some unnecessary ifdefs
+  de8da14d845ee6db9236ccfddabf1d8ebf045ddb
+
+We mostly did that previously. Anyway, merged 2014-12-24.
+
+
+2014-08-01 - radius: Fix realms-config-file option
+  880a81be7c8e0fe8567227bc17a1bff3ea035943
+
+Radius plugin, not in the port.
+
+
+2014-08-01 - pppd: Eliminate potential integer overflow in option parsing
+  7658e8257183f062dc01f87969c140707c7e52cb
+
+pppd config file parser, not in the port.
+
+
+2014-08-01 - pppd: Eliminate memory leak with multiple instances of a string option
+  b94b7fbbaa0589aa6ec5fdc733aeb9ff294d2656
+
+pppd config file parser, not in the port.
+
+
+2014-08-01 - pppd: Fix a stack variable overflow in MSCHAP-v2
+  36733a891fb56594fcee580f667b33a64b990981
+
+This fixes a bug introduced in 08ef47ca ("pppd: Make MSCHAP-v2 cope better with packet loss").
+
+We didn't merge 08ef47ca ;-)
+
+
+2014-08-01 - winbind plugin: Add -DMPPE=1 to eliminate compiler warnings
+  2b05e22c62095e97dd0a97e4b5588402c2185071
+
+Linux plugin, not in the port.
+
+
+2014-08-09 - Update README and patchlevel for 2.4.7 release
+  6e8eaa7a78b31cdab2edf140a9c8afdb02ffaca5
+
+Just release stuff.

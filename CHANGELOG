@@ -6,6 +6,18 @@ HISTORY
 
   ++ New features:
 
+  2014-12-10: Simon Goldschmidt
+  * api: added option LWIP_NETCONN_SEM_PER_THREAD to use a semaphore per thread
+    instead of using one per netconn and per select call
+
+  2014-12-08: Simon Goldschmidt
+  * ip6.h: fixed bug #43778: IPv6 header version not set on 16-bit platform
+    (macro IP6H_VTCFL_SET())
+
+  2014-12-08: Simon Goldschmidt
+  * icmp.c, ip4.c, pbuf.c, udp.c, pbuf.h: task #11472 Support PBUF_REF for RX
+    (IPv6 and IPv4/v6 reassembly might not work yet)
+
   2014-11-06: Simon Goldschmidt
   * sockets.c/.h, init.c: lwip_socket_init() is not needed any more
     -> compatibility define
@@ -130,6 +142,24 @@ HISTORY
 
 
   ++ Bugfixes:
+
+  2014-12-19: Simon Goldschmidt
+  * opt.h, dhcp.h/.c: prevent dhcp from starting when netif link is down (only
+    when LWIP_DHCP_CHECK_LINK_UP==1, which is disabled by default for
+    compatibility reasons)
+
+  2014-12-17: Simon Goldschmidt
+  * tcp_out.c: fixed bug #43840 Checksum error for TCP_CHECKSUM_ON_COPY==1 for
+    no-copy data with odd length
+
+  2014-12-10: Simon Goldschmidt
+  * sockets.c, tcp.c, others: fixed bug #43797 set/getsockopt: SO_SNDTIMEO/SO_RCVTIMEO
+    take int as option but should take timeval (LWIP_SO_SNDRCVTIMEO_STANDARD==0 can
+    be used to revert to the old 'winsock' style behaviour)
+    Fixed implementation of SO_ACCEPTCONN to just look at the pcb state
+
+  2014-12-09: Simon Goldschmidt
+  * ip4.c: fixed bug #43596 IGMP queries from 0.0.0.0 are discarded
 
   2014-10-21: Simon Goldschmidt (patch by Joel Cunningham and Albert Huitsing)
   * sockts.c: fixed bugs #41495 Possible threading issue in select() and #43278

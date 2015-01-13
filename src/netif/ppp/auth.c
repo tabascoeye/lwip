@@ -1018,7 +1018,7 @@ void auth_peer_fail(ppp_pcb *pcb, int protocol) {
 /*
  * The peer has been successfully authenticated using `protocol'.
  */
-void auth_peer_success(ppp_pcb *pcb, int protocol, int prot_flavor, char *name, int namelen) {
+void auth_peer_success(ppp_pcb *pcb, int protocol, int prot_flavor, const char *name, int namelen) {
     int bit;
 
     switch (protocol) {
@@ -1037,6 +1037,8 @@ void auth_peer_success(ppp_pcb *pcb, int protocol, int prot_flavor, char *name, 
 	    bit |= CHAP_MS2_PEER;
 	    break;
 #endif /* MSCHAP_SUPPORT */
+	default:
+	    break;
 	}
 	break;
 #endif /* CHAP_SUPPORT */
@@ -1123,6 +1125,8 @@ void auth_withpeer_success(ppp_pcb *pcb, int protocol, int prot_flavor) {
 	    bit |= CHAP_MS2_WITHPEER;
 	    break;
 #endif /* MSCHAP_SUPPORT */
+	default:
+	    break;
 	}
 	break;
 #endif /* CHAP_SUPPORT */
@@ -1939,7 +1943,7 @@ have_srp_secret(client, server, need_ip, lacks_ipp)
  * for authenticating the given client on the given server.
  * (We could be either client or server).
  */
-int get_secret(ppp_pcb *pcb, char *client, char *server, char *secret, int *secret_len, int am_server) {
+int get_secret(ppp_pcb *pcb, const char *client, const char *server, char *secret, int *secret_len, int am_server) {
   int len;
 
   LWIP_UNUSED_ARG(server);

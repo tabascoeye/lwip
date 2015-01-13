@@ -45,7 +45,6 @@
 #include "lwip/netif.h"
 #include "lwip/def.h"
 #include "lwip/timers.h"
-#include "lwip/sio.h"
 
 #include "ppp.h"
 #include "pppdebug.h"
@@ -277,11 +276,11 @@ struct protent {
     /* Open the protocol */
     void (*open) (ppp_pcb *pcb);
     /* Close the protocol */
-    void (*close) (ppp_pcb *pcb, char *reason);
+    void (*close) (ppp_pcb *pcb, const char *reason);
 #if PRINTPKT_SUPPORT
     /* Print a packet in readable form */
     int  (*printpkt) (u_char *pkt, int len,
-			  void (*printer) (void *, char *, ...),
+			  void (*printer) (void *, const char *, ...),
 			  void *arg);
 #endif /* PRINTPKT_SUPPORT */
     /* FIXME: data input is only used by CCP, which is not supported at this time,
@@ -291,8 +290,8 @@ struct protent {
     void (*datainput) (ppp_pcb *pcb, u_char *pkt, int len);
     u8_t enabled_flag;		/* 0 if protocol is disabled */
 #if PRINTPKT_SUPPORT
-    char *name;			/* Text name of protocol */
-    char *data_name;		/* Text name of corresponding data protocol */
+    const char *name;		/* Text name of protocol */
+    const char *data_name;	/* Text name of corresponding data protocol */
 #endif /* PRINTPKT_SUPPORT */
 #if PPP_OPTIONS
     option_t *options;		/* List of command-line options */
@@ -365,6 +364,9 @@ struct pppd_stats {
 
 /* PPP flow functions
  */
+/* initialize the PPP subsystem */
+int ppp_init(void);
+
 /* function called by pppoe.c */
 void ppp_input(ppp_pcb *pcb, struct pbuf *pb);
 
@@ -403,6 +405,11 @@ int cdns(ppp_pcb *pcb, u32_t ns1, u32_t ns2);
 
 int sifup(ppp_pcb *pcb);
 int sifdown (ppp_pcb *pcb);
+
+#if PPP_IPV6_SUPPORT
+int sif6up(ppp_pcb *pcb);
+int sif6down (ppp_pcb *pcb);
+#endif /* PPP_IPV6_SUPPORT */
 
 int sifnpmode(ppp_pcb *pcb, int proto, enum NPmode mode);
 
@@ -508,7 +515,7 @@ void continue_networks(ppp_pcb *pcb); /* start network [ip, etc] control protos 
 #if PPP_SERVER
 void auth_peer_fail(ppp_pcb *pcb, int protocol);
 				/* peer failed to authenticate itself */
-void auth_peer_success(ppp_pcb *pcb, int protocol, int prot_flavor, char *name, int namelen);
+void auth_peer_success(ppp_pcb *pcb, int protocol, int prot_flavor, const char *name, int namelen);
 				/* peer successfully authenticated itself */
 #endif /* PPP_SERVER */
 void auth_withpeer_fail(ppp_pcb *pcb, int protocol);
@@ -519,7 +526,7 @@ void np_up(ppp_pcb *pcb, int proto);    /* a network protocol has come up */
 void np_down(ppp_pcb *pcb, int proto);  /* a network protocol has gone down */
 void np_finished(ppp_pcb *pcb, int proto); /* a network protocol no longer needs link */
 void auth_reset(ppp_pcb *pcb);	/* check what secrets we have */
-int get_secret(ppp_pcb *pcb, char *client, char *server, char *secret, int *secret_len, int am_server);
+int get_secret(ppp_pcb *pcb, const char *client, const char *server, char *secret, int *secret_len, int am_server);
 				/* get "secret" for chap */
 
 /* Procedures exported from ipcp.c */
@@ -552,17 +559,17 @@ int  str_to_epdisc (struct epdisc *, char *); /* endpt disc. from str */
 #endif
 
 /* Procedures exported from utils.c. */
-void ppp_print_string(char *p, int len, void (*printer) (void *, char *, ...), void *arg);   /* Format a string for output */
-int ppp_slprintf(char *buf, int buflen, char *fmt, ...);            /* sprintf++ */
-int ppp_vslprintf(char *buf, int buflen, char *fmt, va_list args);  /* vsprintf++ */
+void ppp_print_string(char *p, int len, void (*printer) (void *, const char *, ...), void *arg);   /* Format a string for output */
+int ppp_slprintf(char *buf, int buflen, const char *fmt, ...);            /* sprintf++ */
+int ppp_vslprintf(char *buf, int buflen, const char *fmt, va_list args);  /* vsprintf++ */
 size_t ppp_strlcpy(char *dest, const char *src, size_t len);        /* safe strcpy */
 size_t ppp_strlcat(char *dest, const char *src, size_t len);        /* safe strncpy */
-void ppp_dbglog(char *fmt, ...);    /* log a debug message */
-void ppp_info(char *fmt, ...);      /* log an informational message */
-void ppp_notice(char *fmt, ...);    /* log a notice-level message */
-void ppp_warn(char *fmt, ...);      /* log a warning message */
-void ppp_error(char *fmt, ...);     /* log an error message */
-void ppp_fatal(char *fmt, ...);     /* log an error message and die(1) */
+void ppp_dbglog(const char *fmt, ...);    /* log a debug message */
+void ppp_info(const char *fmt, ...);      /* log an informational message */
+void ppp_notice(const char *fmt, ...);    /* log a notice-level message */
+void ppp_warn(const char *fmt, ...);      /* log a warning message */
+void ppp_error(const char *fmt, ...);     /* log an error message */
+void ppp_fatal(const char *fmt, ...);     /* log an error message and die(1) */
 #if PRINTPKT_SUPPORT
 void ppp_dump_packet(const char *tag, unsigned char *p, int len);
                                 /* dump packet to debug log if interesting */
