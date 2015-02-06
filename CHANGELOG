@@ -6,6 +6,19 @@ HISTORY
 
   ++ New features:
 
+  2015-01-02: Simon Goldschmidt
+  * tcp.c: tcp_kill_prio(): prefer nearly-closed connections (waiting for the
+    last ACK only) over established connections when out of tcp pcbs
+
+  2015-01-17: Simon Goldschmidt
+  * api: allow enabling socket API without (public) netconn API - netconn API is
+    still used by sockets, but keeping it private (static) should allow better
+    compiler optimizations
+
+  2015-01-16: Simon Goldschmidt
+  * tcp_in.c: fixed bug #20506 "Initial congestion window is very small" again
+    by implementing the calculation formula from RFC3390
+
   2014-12-10: Simon Goldschmidt
   * api: added option LWIP_NETCONN_SEM_PER_THREAD to use a semaphore per thread
     instead of using one per netconn and per select call
@@ -142,6 +155,19 @@ HISTORY
 
 
   ++ Bugfixes:
+
+  2014-01-27: Simon Goldschmidt
+  * api_msg.c: fixed that SHUT_RD followed by SHUT_WR was different to SHUT_RDWR,
+    fixed return value of lwip_netconn_do_close on unconnected netconns
+
+  2015-01-17: Simon Goldschmidt
+  * sockets.c: fixed bug #43361 select() crashes with stale FDs
+
+  2015-01-17: Simon Goldschmidt
+  * sockets.c/.h, memp_std.h: fixed bug #40788 "lwip_setsockopt_internal() crashes"
+    by rewriting set/getsockopt functions to combine checks with the actual code
+    and add more NULL checks; this also fixes that CORE_LOCKING used message
+    passing for set/getsockopt.
 
   2014-12-19: Simon Goldschmidt
   * opt.h, dhcp.h/.c: prevent dhcp from starting when netif link is down (only
