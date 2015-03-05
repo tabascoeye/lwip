@@ -33,6 +33,7 @@
 #if LWIP_PPP_API /* don't build if not configured for use in lwipopts.h */
 
 #include "lwip/sys.h"
+#include "lwip/netif.h"
 #include "netif/ppp/ppp.h"
 
 #ifdef __cplusplus
@@ -43,7 +44,7 @@ struct pppapi_msg_msg {
 #if !LWIP_TCPIP_CORE_LOCKING
   sys_sem_t sem;
 #endif /* !LWIP_TCPIP_CORE_LOCKING */
-  int err;
+  err_t err;
   ppp_pcb *ppp;
   union {
     struct {
@@ -58,6 +59,7 @@ struct pppapi_msg_msg {
 #endif /* PPP_NOTIFY_PHASE */
 #if PPPOS_SUPPORT
     struct {
+      struct netif *pppif;
       sio_fd_t fd;
       ppp_link_status_cb_fn link_status_cb;
       void *ctx_cb;
@@ -65,6 +67,7 @@ struct pppapi_msg_msg {
 #endif /* PPPOS_SUPPORT */
 #if PPPOE_SUPPORT
     struct {
+      struct netif *pppif;
       struct netif *ethif;
       const char *service_name;
       const char *concentrator_name;
@@ -74,6 +77,7 @@ struct pppapi_msg_msg {
 #endif /* PPPOE_SUPPORT */
 #if PPPOL2TP_SUPPORT
     struct {
+      struct netif *pppif;
       struct netif *netif;
       ip_addr_t *ipaddr;
       u16_t port;
@@ -84,24 +88,36 @@ struct pppapi_msg_msg {
       ppp_link_status_cb_fn link_status_cb;
       void *ctx_cb;
     } l2tpcreate;
+#if LWIP_IPV6
+    struct {
+      struct netif *pppif;
+      struct netif *netif;
+      ip6_addr_t *ip6addr;
+      u16_t port;
+#if PPPOL2TP_AUTH_SUPPORT
+      u8_t *secret;
+      u8_t secret_len;
+#endif /* PPPOL2TP_AUTH_SUPPORT */
+      ppp_link_status_cb_fn link_status_cb;
+      void *ctx_cb;
+    } l2tpcreateip6;
+#endif /* LWIP_IPV6 */
 #endif /* PPPOL2TP_SUPPORT */
     struct {
       u16_t holdoff;
-    } open;
+    } connect;
+#if PPP_SERVER
     struct {
-      int cmd;
+      struct ppp_addrs *addrs;
+    } listen;
+#endif /* PPP_SERVER */
+    struct {
+      u8_t nocarrier;
+    } close;
+    struct {
+      u8_t cmd;
       void *arg;
     } ioctl;
-#if LWIP_NETIF_STATUS_CALLBACK
-    struct {
-      netif_status_callback_fn status_callback;
-    } netifstatuscallback;
-#endif /* LWIP_NETIF_STATUS_CALLBACK */
-#if LWIP_NETIF_LINK_CALLBACK
-    struct {
-      netif_status_callback_fn link_callback;
-    } netiflinkcallback;
-#endif /* LWIP_NETIF_LINK_CALLBACK */
   } msg;
 };
 
@@ -111,36 +127,36 @@ struct pppapi_msg {
 };
 
 /* API for application */
-ppp_pcb *pppapi_new(void);
 void pppapi_set_default(ppp_pcb *pcb);
 void pppapi_set_auth(ppp_pcb *pcb, u8_t authtype, const char *user, const char *passwd);
 #if PPP_NOTIFY_PHASE
 void pppapi_set_notify_phase_callback(ppp_pcb *pcb, ppp_notify_phase_cb_fn notify_phase_cb);
 #endif /* PPP_NOTIFY_PHASE */
 #if PPPOS_SUPPORT
-int pppapi_over_serial_create(ppp_pcb *pcb, sio_fd_t fd, ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
+ppp_pcb *pppapi_pppos_create(struct netif *pppif, sio_fd_t fd, ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
 #endif /* PPPOS_SUPPORT */
 #if PPPOE_SUPPORT
-int pppapi_over_ethernet_create(ppp_pcb *pcb, struct netif *ethif, const char *service_name,
+ppp_pcb *pppapi_pppoe_create(struct netif *pppif, struct netif *ethif, const char *service_name,
                                 const char *concentrator_name, ppp_link_status_cb_fn link_status_cb,
                                 void *ctx_cb);
 #endif /* PPPOE_SUPPORT */
 #if PPPOL2TP_SUPPORT
-int pppapi_over_l2tp_create(ppp_pcb *pcb, struct netif *netif, ip_addr_t *ipaddr, u16_t port,
+ppp_pcb *pppapi_pppol2tp_create(struct netif *pppif, struct netif *netif, ip_addr_t *ipaddr, u16_t port,
                             u8_t *secret, u8_t secret_len,
                             ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
+#if LWIP_IPV6
+ppp_pcb *pppapi_pppol2tp_create_ip6(struct netif *pppif, struct netif *netif, ip6_addr_t *ip6addr, u16_t port,
+                           u8_t *secret, u8_t secret_len,
+                           ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
+#endif /* LWIP_IPV6 */
 #endif /* PPPOL2TP_SUPPORT */
-int pppapi_open(ppp_pcb *pcb, u16_t holdoff);
-int pppapi_close(ppp_pcb *pcb);
-void pppapi_sighup(ppp_pcb *pcb);
-int pppapi_delete(ppp_pcb *pcb);
-int pppapi_ioctl(ppp_pcb *pcb, int cmd, void *arg);
-#if LWIP_NETIF_STATUS_CALLBACK
-void pppapi_set_netif_statuscallback(ppp_pcb *pcb, netif_status_callback_fn status_callback);
-#endif /* LWIP_NETIF_STATUS_CALLBACK */
-#if LWIP_NETIF_LINK_CALLBACK
-void pppapi_set_netif_linkcallback(ppp_pcb *pcb, netif_status_callback_fn link_callback);
-#endif /* LWIP_NETIF_LINK_CALLBACK */
+err_t pppapi_connect(ppp_pcb *pcb, u16_t holdoff);
+#if PPP_SERVER
+err_t pppapi_listen(ppp_pcb *pcb, struct ppp_addrs *addrs);
+#endif /* PPP_SERVER */
+err_t pppapi_close(ppp_pcb *pcb, u8_t nocarrier);
+err_t pppapi_free(ppp_pcb *pcb);
+err_t pppapi_ioctl(ppp_pcb *pcb, u8_t cmd, void *arg);
 
 #ifdef __cplusplus
 }

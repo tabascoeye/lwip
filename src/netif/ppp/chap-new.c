@@ -47,12 +47,15 @@
 #if MSCHAP_SUPPORT
 #include "netif/ppp/chap_ms.h"
 #endif
+#include "netif/ppp/magic.h"
 
+#if 0 /* UNUSED */
 /* Hook for a plugin to validate CHAP challenge */
 int (*chap_verify_hook)(const char *name, const char *ourname, int id,
 			const struct chap_digest_type *digest,
 			const unsigned char *challenge, const unsigned char *response,
 			char *message, int message_space) = NULL;
+#endif /* UNUSED */
 
 #if PPP_OPTIONS
 /*
@@ -89,7 +92,7 @@ static void chap_timeout(void *arg);
 static void chap_generate_challenge(ppp_pcb *pcb);
 static void chap_handle_response(ppp_pcb *pcb, int code,
 		unsigned char *pkt, int len);
-static int chap_verify_response(const char *name, const char *ourname, int id,
+static int chap_verify_response(ppp_pcb *pcb, const char *name, const char *ourname, int id,
 		const struct chap_digest_type *digest,
 		const unsigned char *challenge, const unsigned char *response,
 		char *message, int message_space);
@@ -156,7 +159,6 @@ static void chap_lowerdown(ppp_pcb *pcb) {
  * otherwise we wait for the lower layer to come up.
  */
 void chap_auth_peer(ppp_pcb *pcb, const char *our_name, int digest_code) {
-	struct chap_server_state *ss = &pcb->chap_server;
 	const struct chap_digest_type *dp;
 	int i;
 
@@ -174,10 +176,10 @@ void chap_auth_peer(ppp_pcb *pcb, const char *our_name, int digest_code) {
 	pcb->chap_server.digest = dp;
 	pcb->chap_server.name = our_name;
 	/* Start with a random ID value */
-	pcb->chap_server.id = (unsigned char)(drand48() * 256);
+	pcb->chap_server.id = (u8_t)magic_pow(8);
 	pcb->chap_server.flags |= AUTH_STARTED;
 	if (pcb->chap_server.flags & LOWERUP)
-		chap_timeout(ss);
+		chap_timeout(pcb);
 }
 #endif /* PPP_SERVER */
 
@@ -281,9 +283,12 @@ static void  chap_handle_response(ppp_pcb *pcb, int id,
 	unsigned char *outp;
 	struct pbuf *p;
 	const char *name = NULL;	/* initialized to shut gcc up */
+#if 0 /* UNUSED */
 	int (*verifier)(const char *, const char *, int, const struct chap_digest_type *,
 		const unsigned char *, const unsigned char *, char *, int);
+#endif /* UNUSED */
 	char rname[MAXNAMELEN+1];
+	char message[256];
 
 	if ((pcb->chap_server.flags & LOWERUP) == 0)
 		return;
@@ -312,6 +317,7 @@ static void  chap_handle_response(ppp_pcb *pcb, int id,
 			name = rname;
 		}
 
+#if 0 /* UNUSED */
 		if (chap_verify_hook)
 			verifier = chap_verify_hook;
 		else
@@ -319,6 +325,10 @@ static void  chap_handle_response(ppp_pcb *pcb, int id,
 		ok = (*verifier)(name, pcb->chap_server.name, id, pcb->chap_server.digest,
 				 pcb->chap_server.challenge + PPP_HDRLEN + CHAP_HDRLEN,
 				 response, pcb->chap_server.message, sizeof(pcb->chap_server.message));
+#endif /* UNUSED */
+		ok = chap_verify_response(pcb, name, pcb->chap_server.name, id, pcb->chap_server.digest,
+                    pcb->chap_server.challenge + PPP_HDRLEN + CHAP_HDRLEN,
+                    response, message, sizeof(message));
 #if 0 /* UNUSED */
 		if (!ok || !auth_number()) {
 #endif /* UNUSED */
@@ -330,7 +340,7 @@ static void  chap_handle_response(ppp_pcb *pcb, int id,
 		return;
 
 	/* send the response */
-	mlen = strlen(pcb->chap_server.message);
+	mlen = strlen(message);
 	len = CHAP_HDRLEN + mlen;
 	p = pbuf_alloc(PBUF_RAW, (u16_t)(PPP_HDRLEN +len), PPP_CTRL_PBUF_TYPE);
 	if(NULL == p)
@@ -348,7 +358,7 @@ static void  chap_handle_response(ppp_pcb *pcb, int id,
 	outp[2] = len >> 8;
 	outp[3] = len;
 	if (mlen > 0)
-		memcpy(outp + CHAP_HDRLEN, pcb->chap_server.message, mlen);
+		memcpy(outp + CHAP_HDRLEN, message, mlen);
 	ppp_write(pcb, p);
 
 	if (pcb->chap_server.flags & CHALLENGE_VALID) {
@@ -395,7 +405,7 @@ static void  chap_handle_response(ppp_pcb *pcb, int id,
  * what we think it should be.  Returns 1 if it does (authentication
  * succeeded), or 0 if it doesn't.
  */
-static int chap_verify_response(const char *name, const char *ourname, int id,
+static int chap_verify_response(ppp_pcb *pcb, const char *name, const char *ourname, int id,
 		     const struct chap_digest_type *digest,
 		     const unsigned char *challenge, const unsigned char *response,
 		     char *message, int message_space) {
@@ -403,18 +413,11 @@ static int chap_verify_response(const char *name, const char *ourname, int id,
 	unsigned char secret[MAXSECRETLEN];
 	int secret_len;
 
-/* FIXME: we need a way to check peer secret */
-#if 0
 	/* Get the secret that the peer is supposed to know */
 	if (!get_secret(pcb, name, ourname, (char *)secret, &secret_len, 1)) {
 		ppp_error("No CHAP secret found for authenticating %q", name);
 		return 0;
 	}
-#else
-	/* only here to clean compiler warnings */
-	LWIP_UNUSED_ARG(ourname);
-	secret_len = 0;
-#endif /* 0 */
 	ok = digest->verify_response(id, name, secret, secret_len, challenge,
 				     response, message, message_space);
 	memset(secret, 0, sizeof(secret));
@@ -651,8 +654,9 @@ const struct protent chap_protent = {
 #if PRINTPKT_SUPPORT
 	chap_print_pkt,
 #endif /* PRINTPKT_SUPPORT */
+#if PPP_DATAINPUT
 	NULL,		/* datainput */
-	1,		/* enabled_flag */
+#endif /* PPP_DATAINPUT */
 #if PRINTPKT_SUPPORT
 	"CHAP",		/* name */
 	NULL,		/* data_name */

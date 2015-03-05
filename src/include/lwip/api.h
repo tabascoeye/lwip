@@ -66,10 +66,6 @@ extern "C" {
 #define NETCONN_DONTBLOCK 0x04
 
 /* Flags for struct netconn.flags (u8_t) */
-/** TCP: when data passed to netconn_write doesn't fit into the send buffer,
-    this temporarily stores whether to wake up the original application task
-    if data couldn't be sent in the first try. */
-#define NETCONN_FLAG_WRITE_DELAYED            0x01
 /** Should this netconn avoid blocking? */
 #define NETCONN_FLAG_NON_BLOCKING             0x02
 /** Was the last connect action a non-blocking one? */
@@ -214,6 +210,10 @@ struct netconn {
       for UDP and RAW, used for FIONREAD */
   int recv_avail;
 #endif /* LWIP_SO_RCVBUF */
+#if LWIP_SO_LINGER
+   /** values <0 mean linger is disabled, values > 0 are seconds to linger */
+  s16_t linger;
+#endif /* LWIP_SO_LINGER */
   /** flags holding more netconn-internal state, see NETCONN_FLAG_* defines */
   u8_t flags;
 #if LWIP_TCP
@@ -259,8 +259,8 @@ LWIP_NETCONN_SCOPE err_t   netconn_getaddr(struct netconn *conn, ip_addr_t *addr
 #define netconn_peer(c,i,p) netconn_getaddr(c,i,p,0)
 #define netconn_addr(c,i,p) netconn_getaddr(c,i,p,1)
 
-LWIP_NETCONN_SCOPE err_t   netconn_bind(struct netconn *conn, ip_addr_t *addr, u16_t port);
-LWIP_NETCONN_SCOPE err_t   netconn_connect(struct netconn *conn, ip_addr_t *addr, u16_t port);
+LWIP_NETCONN_SCOPE err_t   netconn_bind(struct netconn *conn, const ip_addr_t *addr, u16_t port);
+LWIP_NETCONN_SCOPE err_t   netconn_connect(struct netconn *conn, const ip_addr_t *addr, u16_t port);
 LWIP_NETCONN_SCOPE err_t   netconn_disconnect (struct netconn *conn);
 LWIP_NETCONN_SCOPE err_t   netconn_listen_with_backlog(struct netconn *conn, u8_t backlog);
 #define netconn_listen(conn) netconn_listen_with_backlog(conn, TCP_DEFAULT_LISTEN_BACKLOG)
@@ -269,7 +269,7 @@ LWIP_NETCONN_SCOPE err_t   netconn_recv(struct netconn *conn, struct netbuf **ne
 LWIP_NETCONN_SCOPE err_t   netconn_recv_tcp_pbuf(struct netconn *conn, struct pbuf **new_buf);
 LWIP_NETCONN_SCOPE void    netconn_recved(struct netconn *conn, u32_t length);
 LWIP_NETCONN_SCOPE err_t   netconn_sendto(struct netconn *conn, struct netbuf *buf,
-                       ip_addr_t *addr, u16_t port);
+                             const ip_addr_t *addr, u16_t port);
 LWIP_NETCONN_SCOPE err_t   netconn_send(struct netconn *conn, struct netbuf *buf);
 LWIP_NETCONN_SCOPE err_t   netconn_write_partly(struct netconn *conn, const void *dataptr, size_t size,
                              u8_t apiflags, size_t *bytes_written);
@@ -279,8 +279,8 @@ LWIP_NETCONN_SCOPE err_t   netconn_close(struct netconn *conn);
 LWIP_NETCONN_SCOPE err_t   netconn_shutdown(struct netconn *conn, u8_t shut_rx, u8_t shut_tx);
 
 #if LWIP_IGMP || (LWIP_IPV6 && LWIP_IPV6_MLD)
-LWIP_NETCONN_SCOPE err_t   netconn_join_leave_group(struct netconn *conn, ip_addr_t *multiaddr,
-                                 ip_addr_t *netif_addr, enum netconn_igmp join_or_leave);
+LWIP_NETCONN_SCOPE err_t   netconn_join_leave_group(struct netconn *conn, const ip_addr_t *multiaddr,
+                             const ip_addr_t *netif_addr, enum netconn_igmp join_or_leave);
 #endif /* LWIP_IGMP || (LWIP_IPV6 && LWIP_IPV6_MLD) */
 #if LWIP_DNS
 err_t   netconn_gethostbyname(const char *name, ip_addr_t *addr);

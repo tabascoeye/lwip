@@ -43,6 +43,7 @@
 #include "lwip/def.h"
 #include "lwip/stats.h"
 #include "lwip/mem.h"
+#include "lwip/debug.h"
 
 #include <string.h>
 

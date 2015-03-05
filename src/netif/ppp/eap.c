@@ -55,6 +55,7 @@
 #endif
 
 #include "netif/ppp/eap.h"
+#include "netif/ppp/magic.h"
 
 #ifdef USE_SRP
 #include <t_pwd.h>
@@ -123,8 +124,9 @@ const struct protent eap_protent = {
 #if PRINTPKT_SUPPORT
 	eap_printpkt,		/* print a packet in readable form */
 #endif /* PRINTPKT_SUPPORT */
+#if PPP_DATAINPUT
 	NULL,			/* process a received data packet */
-	1,			/* protocol enabled */
+#endif /* PPP_DATAINPUT */
 #if PRINTPKT_SUPPORT
 	"EAP",			/* text name of protocol */
 	NULL,			/* text name of corresponding data protocol */
@@ -202,7 +204,7 @@ static void eap_init(ppp_pcb *pcb) {
 
 	BZERO(&pcb->eap, sizeof(eap_state));
 #if PPP_SERVER
-	pcb->eap.es_server.ea_id = (u_char)(drand48() * 0x100); /* FIXME: use magic.c random function */
+	pcb->eap.es_server.ea_id = (u_char)magic_pow(8);
 #endif /* PPP_SERVER */
 }
 
@@ -661,14 +663,19 @@ static void eap_send_request(ppp_pcb *pcb) {
 	    pcb->eap.es_server.ea_state != eapInitial) {
 		pcb->eap.es_server.ea_state = eapIdentify;
 #if PPP_REMOTENAME
-		if (pcb->settings.explicit_remote) {
+		if (pcb->settings.explicit_remote && pcb->remote_name) {
 			/*
 			 * If we already know the peer's
 			 * unauthenticated name, then there's no
 			 * reason to ask.  Go to next state instead.
 			 */
-			pcb->eap.es_server.ea_peer = pcb->remote_name;
-			pcb->eap.es_server.ea_peerlen = strlen(pcb->remote_name);
+			int len = (int)strlen(pcb->remote_name);
+			if (len > MAXNAMELEN) {
+				len = MAXNAMELEN;
+			}
+			MEMCPY(pcb->eap.es_server.ea_peer, pcb->remote_name, len);
+			pcb->eap.es_server.ea_peer[len] = '\0';
+			pcb->eap.es_server.ea_peerlen = len;
 			eap_figure_next_state(pcb, 0);
 		}
 #endif /* PPP_REMOTENAME */
@@ -716,14 +723,13 @@ static void eap_send_request(ppp_pcb *pcb) {
 		 * pick a random challenge length between
 		 * EAP_MIN_CHALLENGE_LENGTH and EAP_MAX_CHALLENGE_LENGTH
 		 */
-		challen = (drand48() *
-		    (EAP_MAX_CHALLENGE_LENGTH - EAP_MIN_CHALLENGE_LENGTH)) +
-			    EAP_MIN_CHALLENGE_LENGTH;
+		challen = EAP_MIN_CHALLENGE_LENGTH +
+		    magic_pow(EAP_MIN_MAX_POWER_OF_TWO_CHALLENGE_LENGTH);
 		PUTCHAR(challen, outp);
 		pcb->eap.es_challen = challen;
 		ptr = pcb->eap.es_challenge;
 		while (--challen >= 0)
-			*ptr++ = (u_char) (drand48() * 0x100);
+			*ptr++ = (u_char)magic_pow(8);
 		MEMCPY(outp, pcb->eap.es_challenge, pcb->eap.es_challen);
 		INCPTR(pcb->eap.es_challen, outp);
 		MEMCPY(outp, pcb->eap.es_server.ea_name, pcb->eap.es_server.ea_namelen);
@@ -808,7 +814,7 @@ static void eap_send_request(ppp_pcb *pcb) {
 				MEMCPY(clear, cp, i);
 				cp += i;
 				while (i < 8) {
-					*cp++ = drand48() * 0x100;
+					*cp++ = magic_pow(8);
 					i++;
 				}
 				/* FIXME: if we want to do SRP, we need to find a way to pass the PolarSSL des_context instead of using static memory */
@@ -823,7 +829,7 @@ static void eap_send_request(ppp_pcb *pcb) {
 			i %= SHA_DIGESTSIZE;
 			if (i != 0) {
 				while (i < SHA_DIGESTSIZE) {
-					*outp++ = drand48() * 0x100;
+					*outp++ = magic_pow(8);
 					i++;
 				}
 			}
@@ -854,11 +860,11 @@ static void eap_send_request(ppp_pcb *pcb) {
 		PUTCHAR(EAPT_SRP, outp);
 		PUTCHAR(EAPSRP_LWRECHALLENGE, outp);
 		challen = EAP_MIN_CHALLENGE_LENGTH +
-		    ((EAP_MAX_CHALLENGE_LENGTH - EAP_MIN_CHALLENGE_LENGTH) * drand48());
+		    magic_pow(EAP_MIN_MAX_POWER_OF_TWO_CHALLENGE_LENGTH);
 		pcb->eap.es_challen = challen;
 		ptr = pcb->eap.es_challenge;
 		while (--challen >= 0)
-			*ptr++ = drand48() * 0x100;
+			*ptr++ = magic_pow(8);
 		MEMCPY(outp, pcb->eap.es_challenge, pcb->eap.es_challen);
 		INCPTR(pcb->eap.es_challen, outp);
 		break;
@@ -963,21 +969,6 @@ static void srp_lwrechallenge(void *arg) {
  * thing.
  */
 static void eap_lowerup(ppp_pcb *pcb) {
-
-	/* Discard any (possibly authenticated) peer name. */
-#if PPP_SERVER
-	if (pcb->eap.es_server.ea_peer != NULL
-#if PPP_REMOTENAME
-	    && pcb->eap.es_server.ea_peer != pcb->remote_name
-#endif /* PPP_REMOTENAME */
-	    )
-		free(pcb->eap.es_server.ea_peer);
-	pcb->eap.es_server.ea_peer = NULL;
-#endif /* PPP_SERVER */
-	if (pcb->eap.es_client.ea_peer != NULL)
-		free(pcb->eap.es_client.ea_peer);
-	pcb->eap.es_client.ea_peer = NULL;
-
 	pcb->eap.es_client.ea_state = eapClosed;
 #if PPP_SERVER
 	pcb->eap.es_server.ea_state = eapClosed;
@@ -1341,7 +1332,7 @@ static void eap_request(ppp_pcb *pcb, u_char *inp, int id, int len) {
 	u_char vallen;
 	int secret_len;
 	char secret[MAXWORDLEN];
-	char rhostname[256];
+	char rhostname[MAXNAMELEN];
 	md5_context mdContext;
 	u_char hash[MD5_SIGNATURE_SIZE];
 #ifdef USE_SRP
@@ -1513,6 +1504,8 @@ static void eap_request(ppp_pcb *pcb, u_char *inp, int id, int len) {
 			/* No session key just yet */
 			pcb->eap.es_client.ea_skey = NULL;
 			if (tc == NULL) {
+				int rhostnamelen;
+
 				GETCHAR(vallen, inp);
 				len--;
 				if (vallen >= len) {
@@ -1536,10 +1529,13 @@ static void eap_request(ppp_pcb *pcb, u_char *inp, int id, int len) {
 					    sizeof (rhostname));
 				}
 
-				if (pcb->eap.es_client.ea_peer != NULL)
-					free(pcb->eap.es_client.ea_peer);
-				pcb->eap.es_client.ea_peer = strdup(rhostname);
-				pcb->eap.es_client.ea_peerlen = strlen(rhostname);
+				rhostnamelen = (int)strlen(rhostname);
+				if (rhostnamelen > MAXNAMELEN) {
+					rhostnamelen = MAXNAMELEN;
+				}
+				MEMCPY(pcb->eap.es_client.ea_peer, rhostname, rhostnamelen);
+				pcb->eap.es_client.ea_peer[rhostnamelen] = '\0';
+				pcb->eap.es_client.ea_peerlen = rhostnamelen;
 
 				GETCHAR(vallen, inp);
 				len--;
@@ -1740,7 +1736,6 @@ client_failure:
 }
 
 #if PPP_SERVER
-/* FIXME: remove malloc() and free() */
 /*
  * eap_response - Receive EAP Response message (server mode).
  */
@@ -1749,7 +1744,7 @@ static void eap_response(ppp_pcb *pcb, u_char *inp, int id, int len) {
 	u_char vallen;
 	int secret_len;
 	char secret[MAXSECRETLEN];
-	char rhostname[256];
+	char rhostname[MAXNAMELEN];
 	md5_context mdContext;
 	u_char hash[MD5_SIGNATURE_SIZE];
 #ifdef USE_SRP
@@ -1783,17 +1778,8 @@ static void eap_response(ppp_pcb *pcb, u_char *inp, int id, int len) {
 			break;
 		}
 		ppp_info("EAP: unauthenticated peer name \"%.*q\"", len, inp);
-		if (pcb->eap.es_server.ea_peer != NULL
-#if PPP_REMOTENAME
-		    && pcb->eap.es_server.ea_peer != pcb->remote_name
-#endif /* PPP_REMOTENAME */
-		    )
-			free(pcb->eap.es_server.ea_peer);
-		pcb->eap.es_server.ea_peer = (char*)malloc(len + 1);
-		if (pcb->eap.es_server.ea_peer == NULL) {
-			pcb->eap.es_server.ea_peerlen = 0;
-			eap_figure_next_state(pcb, 1);
-			break;
+		if (len > MAXNAMELEN) {
+		  len = MAXNAMELEN;
 		}
 		MEMCPY(pcb->eap.es_server.ea_peer, inp, len);
 		pcb->eap.es_server.ea_peer[len] = '\0';

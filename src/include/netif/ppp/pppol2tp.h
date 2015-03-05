@@ -155,10 +155,6 @@
 #define PPPOL2TP_STATE_ICCN_SENT   3
 #define PPPOL2TP_STATE_DATA        4
 
-#define PPPOL2TP_CB_STATE_UP       0 /* PPPoL2TP link is UP */
-#define PPPOL2TP_CB_STATE_DOWN     1 /* PPPo2TP link is DOWN - normal condition */
-#define PPPOL2TP_CB_STATE_FAILED   2 /* Failed to setup PPPo2TP link */
-
 #define PPPOL2TP_OUTPUT_DATA_HEADER_LEN   6 /* Our data header len */
 
 /*
@@ -168,10 +164,9 @@ typedef struct pppol2tp_pcb_s pppol2tp_pcb;
 struct pppol2tp_pcb_s {
   ppp_pcb *ppp;                /* PPP PCB */
   u8_t phase;                  /* L2TP phase */
-  void (*link_status_cb)(ppp_pcb *pcb, int status);
   struct udp_pcb *udp;         /* UDP L2TP Socket */
   struct netif *netif;         /* Output interface, used as a default route */
-  ip_addr_t remote_ip;         /* LNS IP Address */
+  ipX_addr_t remote_ip;        /* LNS IP Address */
   u16_t remote_port;           /* LNS port */
 #if PPPOL2TP_AUTH_SUPPORT
   u8_t *secret;                /* Secret string */
@@ -196,22 +191,19 @@ struct pppol2tp_pcb_s {
 };
 
 
-/* Create a new L2TP session. */
-err_t pppol2tp_create(ppp_pcb *ppp, void (*link_status_cb)(ppp_pcb *pcb, int status), pppol2tp_pcb **l2tpptr,
-                      struct netif *netif, ip_addr_t *ipaddr, u16_t port,
-                      u8_t *secret, u8_t secret_len);
+/* Create a new L2TP session over IPv4. */
+ppp_pcb *pppol2tp_create(struct netif *pppif,
+       struct netif *netif, ip_addr_t *ipaddr, u16_t port,
+       u8_t *secret, u8_t secret_len,
+       ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
 
-/* Destroy a L2TP control block */
-err_t pppol2tp_destroy(pppol2tp_pcb *l2tp);
-
-/* Be a LAC, connect to a LNS. */
-err_t pppol2tp_connect(pppol2tp_pcb *l2tp);
-
-/* Disconnect */
-void pppol2tp_disconnect(pppol2tp_pcb *l2tp);
-
-/* Data packet from PPP to L2TP */
-err_t pppol2tp_xmit(pppol2tp_pcb *l2tp, struct pbuf *pb);
+#if LWIP_IPV6
+/* Create a new L2TP session over IPv6. */
+ppp_pcb *pppol2tp_create_ip6(struct netif *pppif,
+       struct netif *netif, ip6_addr_t *ip6addr, u16_t port,
+       u8_t *secret, u8_t secret_len,
+       ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
+#endif /* LWIP_IPV6 */
 
 #endif /* PPPOL2TP_H_ */
 #endif /* PPP_SUPPORT && PPPOL2TP_SUPPORT */

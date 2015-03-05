@@ -37,30 +37,9 @@
 
 #include "lwip/pppapi.h"
 #include "lwip/tcpip.h"
-
-/**
- * Call ppp_new() inside the tcpip_thread context.
- */
-static void
-pppapi_do_ppp_new(struct pppapi_msg_msg *msg)
-{
-  msg->ppp = ppp_new();
-  TCPIP_PPPAPI_ACK(msg);
-}
-
-/**
- * Call ppp_new() in a thread-safe way by running that function inside the
- * tcpip_thread context.
- */
-ppp_pcb*
-pppapi_new(void)
-{
-  struct pppapi_msg msg;
-  msg.function = pppapi_do_ppp_new;
-  TCPIP_PPPAPI(&msg);
-  return msg.msg.ppp;
-}
-
+#include "netif/ppp/pppoe.h"
+#include "netif/ppp/pppol2tp.h"
+#include "netif/ppp/pppos.h"
 
 /**
  * Call ppp_set_default() inside the tcpip_thread context.
@@ -143,81 +122,81 @@ pppapi_set_notify_phase_callback(ppp_pcb *pcb, ppp_notify_phase_cb_fn notify_pha
 
 #if PPPOS_SUPPORT
 /**
- * Call ppp_over_serial_create() inside the tcpip_thread context.
+ * Call pppos_create() inside the tcpip_thread context.
  */
 static void
-pppapi_do_ppp_over_serial_create(struct pppapi_msg_msg *msg)
+pppapi_do_pppos_create(struct pppapi_msg_msg *msg)
 {
-  msg->err = ppp_over_serial_create(msg->ppp, msg->msg.serialcreate.fd,
+  msg->ppp = pppos_create(msg->msg.serialcreate.pppif, msg->msg.serialcreate.fd,
     msg->msg.serialcreate.link_status_cb, msg->msg.serialcreate.ctx_cb);
   TCPIP_PPPAPI_ACK(msg);
 }
 
 /**
- * Call ppp_over_serial_create() in a thread-safe way by running that function inside the
+ * Call pppos_create() in a thread-safe way by running that function inside the
  * tcpip_thread context.
  */
-int
-pppapi_over_serial_create(ppp_pcb *pcb, sio_fd_t fd, ppp_link_status_cb_fn link_status_cb,
+ppp_pcb*
+pppapi_pppos_create(struct netif *pppif, sio_fd_t fd, ppp_link_status_cb_fn link_status_cb,
                           void *ctx_cb)
 {
   struct pppapi_msg msg;
-  msg.function = pppapi_do_ppp_over_serial_create;
-  msg.msg.ppp = pcb;
+  msg.function = pppapi_do_pppos_create;
+  msg.msg.msg.serialcreate.pppif = pppif;
   msg.msg.msg.serialcreate.fd = fd;
   msg.msg.msg.serialcreate.link_status_cb = link_status_cb;
   msg.msg.msg.serialcreate.ctx_cb = ctx_cb;
   TCPIP_PPPAPI(&msg);
-  return msg.msg.err;
+  return msg.msg.ppp;
 }
 #endif /* PPPOS_SUPPORT */
 
 
 #if PPPOE_SUPPORT
 /**
- * Call ppp_over_ethernet_create() inside the tcpip_thread context.
+ * Call pppoe_create() inside the tcpip_thread context.
  */
 static void
-pppapi_do_ppp_over_ethernet_create(struct pppapi_msg_msg *msg)
+pppapi_do_pppoe_create(struct pppapi_msg_msg *msg)
 {
 
-  msg->err = ppp_over_ethernet_create(msg->ppp, msg->msg.ethernetcreate.ethif,
+  msg->ppp = pppoe_create(msg->msg.ethernetcreate.pppif, msg->msg.ethernetcreate.ethif,
     msg->msg.ethernetcreate.service_name, msg->msg.ethernetcreate.concentrator_name,
     msg->msg.ethernetcreate.link_status_cb, msg->msg.ethernetcreate.ctx_cb);
   TCPIP_PPPAPI_ACK(msg);
 }
 
 /**
- * Call ppp_over_ethernet_create() in a thread-safe way by running that function inside the
+ * Call pppoe_create() in a thread-safe way by running that function inside the
  * tcpip_thread context.
  */
-int
-pppapi_over_ethernet_create(ppp_pcb *pcb, struct netif *ethif, const char *service_name,
+ppp_pcb*
+pppapi_pppoe_create(struct netif *pppif, struct netif *ethif, const char *service_name,
                             const char *concentrator_name, ppp_link_status_cb_fn link_status_cb,
                             void *ctx_cb)
 {
   struct pppapi_msg msg;
-  msg.function = pppapi_do_ppp_over_ethernet_create;
-  msg.msg.ppp = pcb;
+  msg.function = pppapi_do_pppoe_create;
+  msg.msg.msg.ethernetcreate.pppif = pppif;
   msg.msg.msg.ethernetcreate.ethif = ethif;
   msg.msg.msg.ethernetcreate.service_name = service_name;
   msg.msg.msg.ethernetcreate.concentrator_name = concentrator_name;
   msg.msg.msg.ethernetcreate.link_status_cb = link_status_cb;
   msg.msg.msg.ethernetcreate.ctx_cb = ctx_cb;
   TCPIP_PPPAPI(&msg);
-  return msg.msg.err;
+  return msg.msg.ppp;
 }
 #endif /* PPPOE_SUPPORT */
 
 
 #if PPPOL2TP_SUPPORT
 /**
- * Call ppp_over_l2tp_create() inside the tcpip_thread context.
+ * Call pppol2tp_create() inside the tcpip_thread context.
  */
 static void
-pppapi_do_ppp_over_l2tp_create(struct pppapi_msg_msg *msg)
+pppapi_do_pppol2tp_create(struct pppapi_msg_msg *msg)
 {
-  msg->err = ppp_over_l2tp_create(msg->ppp,
+  msg->ppp = pppol2tp_create(msg->msg.l2tpcreate.pppif,
     msg->msg.l2tpcreate.netif, msg->msg.l2tpcreate.ipaddr, msg->msg.l2tpcreate.port,
 #if PPPOL2TP_AUTH_SUPPORT
     msg->msg.l2tpcreate.secret,
@@ -230,17 +209,17 @@ pppapi_do_ppp_over_l2tp_create(struct pppapi_msg_msg *msg)
 }
 
 /**
- * Call ppp_over_l2tp_create() in a thread-safe way by running that function inside the
+ * Call pppol2tp_create() in a thread-safe way by running that function inside the
  * tcpip_thread context.
  */
-int
-pppapi_over_l2tp_create(ppp_pcb *pcb, struct netif *netif, ip_addr_t *ipaddr, u16_t port,
+ppp_pcb*
+pppapi_pppol2tp_create(struct netif *pppif, struct netif *netif, ip_addr_t *ipaddr, u16_t port,
                         u8_t *secret, u8_t secret_len,
                         ppp_link_status_cb_fn link_status_cb, void *ctx_cb)
 {
   struct pppapi_msg msg;
-  msg.function = pppapi_do_ppp_over_l2tp_create;
-  msg.msg.ppp = pcb;
+  msg.function = pppapi_do_pppol2tp_create;
+  msg.msg.msg.l2tpcreate.pppif = pppif;
   msg.msg.msg.l2tpcreate.netif = netif;
   msg.msg.msg.l2tpcreate.ipaddr = ipaddr;
   msg.msg.msg.l2tpcreate.port = port;
@@ -251,35 +230,109 @@ pppapi_over_l2tp_create(ppp_pcb *pcb, struct netif *netif, ip_addr_t *ipaddr, u1
   msg.msg.msg.l2tpcreate.link_status_cb = link_status_cb;
   msg.msg.msg.l2tpcreate.ctx_cb = ctx_cb;
   TCPIP_PPPAPI(&msg);
-  return msg.msg.err;
+  return msg.msg.ppp;
 }
-#endif /* PPPOL2TP_SUPPORT */
 
 
+#if LWIP_IPV6
 /**
- * Call ppp_open() inside the tcpip_thread context.
+ * Call pppol2tp_create_ip6() inside the tcpip_thread context.
  */
 static void
-pppapi_do_ppp_open(struct pppapi_msg_msg *msg)
+pppapi_do_pppol2tp_create_ip6(struct pppapi_msg_msg *msg)
 {
-  msg->err = ppp_open(msg->ppp, msg->msg.open.holdoff);
+  msg->ppp = pppol2tp_create_ip6(msg->msg.l2tpcreateip6.pppif,
+    msg->msg.l2tpcreateip6.netif, msg->msg.l2tpcreateip6.ip6addr, msg->msg.l2tpcreateip6.port,
+#if PPPOL2TP_AUTH_SUPPORT
+    msg->msg.l2tpcreateip6.secret,
+    msg->msg.l2tpcreateip6.secret_len,
+#else /* PPPOL2TP_AUTH_SUPPORT */
+    NULL,
+#endif /* PPPOL2TP_AUTH_SUPPORT */
+    msg->msg.l2tpcreateip6.link_status_cb, msg->msg.l2tpcreateip6.ctx_cb);
   TCPIP_PPPAPI_ACK(msg);
 }
 
 /**
- * Call ppp_open() in a thread-safe way by running that function inside the
+ * Call pppol2tp_create_ip6() in a thread-safe way by running that function inside the
  * tcpip_thread context.
  */
-int
-pppapi_open(ppp_pcb *pcb, u16_t holdoff)
+ppp_pcb*
+pppapi_pppol2tp_create_ip6(struct netif *pppif, struct netif *netif, ip6_addr_t *ip6addr, u16_t port,
+                           u8_t *secret, u8_t secret_len,
+                           ppp_link_status_cb_fn link_status_cb, void *ctx_cb)
 {
   struct pppapi_msg msg;
-  msg.function = pppapi_do_ppp_open;
+  msg.function = pppapi_do_pppol2tp_create_ip6;
+  msg.msg.msg.l2tpcreateip6.pppif = pppif;
+  msg.msg.msg.l2tpcreateip6.netif = netif;
+  msg.msg.msg.l2tpcreateip6.ip6addr = ip6addr;
+  msg.msg.msg.l2tpcreateip6.port = port;
+#if PPPOL2TP_AUTH_SUPPORT
+  msg.msg.msg.l2tpcreateip6.secret = secret;
+  msg.msg.msg.l2tpcreateip6.secret_len = secret_len;
+#endif /* PPPOL2TP_AUTH_SUPPORT */
+  msg.msg.msg.l2tpcreateip6.link_status_cb = link_status_cb;
+  msg.msg.msg.l2tpcreateip6.ctx_cb = ctx_cb;
+  TCPIP_PPPAPI(&msg);
+  return msg.msg.ppp;
+}
+#endif /* LWIP_IPV6 */
+#endif /* PPPOL2TP_SUPPORT */
+
+
+/**
+ * Call ppp_connect() inside the tcpip_thread context.
+ */
+static void
+pppapi_do_ppp_connect(struct pppapi_msg_msg *msg)
+{
+  msg->err = ppp_connect(msg->ppp, msg->msg.connect.holdoff);
+  TCPIP_PPPAPI_ACK(msg);
+}
+
+/**
+ * Call ppp_connect() in a thread-safe way by running that function inside the
+ * tcpip_thread context.
+ */
+err_t
+pppapi_connect(ppp_pcb *pcb, u16_t holdoff)
+{
+  struct pppapi_msg msg;
+  msg.function = pppapi_do_ppp_connect;
   msg.msg.ppp = pcb;
-  msg.msg.msg.open.holdoff = holdoff;
+  msg.msg.msg.connect.holdoff = holdoff;
   TCPIP_PPPAPI(&msg);
   return msg.msg.err;
 }
+
+
+#if PPP_SERVER
+/**
+ * Call ppp_listen() inside the tcpip_thread context.
+ */
+static void
+pppapi_do_ppp_listen(struct pppapi_msg_msg *msg)
+{
+  msg->err = ppp_listen(msg->ppp, msg->msg.listen.addrs);
+  TCPIP_PPPAPI_ACK(msg);
+}
+
+/**
+ * Call ppp_listen() in a thread-safe way by running that function inside the
+ * tcpip_thread context.
+ */
+err_t
+pppapi_listen(ppp_pcb *pcb, struct ppp_addrs *addrs)
+{
+  struct pppapi_msg msg;
+  msg.function = pppapi_do_ppp_listen;
+  msg.msg.ppp = pcb;
+  msg.msg.msg.listen.addrs = addrs;
+  TCPIP_PPPAPI(&msg);
+  return msg.msg.err;
+}
+#endif /* PPP_SERVER */
 
 
 /**
@@ -288,7 +341,7 @@ pppapi_open(ppp_pcb *pcb, u16_t holdoff)
 static void
 pppapi_do_ppp_close(struct pppapi_msg_msg *msg)
 {
-  msg->err = ppp_close(msg->ppp);
+  msg->err = ppp_close(msg->ppp, msg->msg.close.nocarrier);
   TCPIP_PPPAPI_ACK(msg);
 }
 
@@ -296,60 +349,37 @@ pppapi_do_ppp_close(struct pppapi_msg_msg *msg)
  * Call ppp_close() in a thread-safe way by running that function inside the
  * tcpip_thread context.
  */
-int
-pppapi_close(ppp_pcb *pcb)
+err_t
+pppapi_close(ppp_pcb *pcb, u8_t nocarrier)
 {
   struct pppapi_msg msg;
   msg.function = pppapi_do_ppp_close;
   msg.msg.ppp = pcb;
+  msg.msg.msg.close.nocarrier = nocarrier;
   TCPIP_PPPAPI(&msg);
   return msg.msg.err;
 }
 
 
 /**
- * Call ppp_sighup() inside the tcpip_thread context.
+ * Call ppp_free() inside the tcpip_thread context.
  */
 static void
-pppapi_do_ppp_sighup(struct pppapi_msg_msg *msg)
+pppapi_do_ppp_free(struct pppapi_msg_msg *msg)
 {
-  ppp_sighup(msg->ppp);
+  msg->err = ppp_free(msg->ppp);
   TCPIP_PPPAPI_ACK(msg);
 }
 
 /**
- * Call ppp_sighup() in a thread-safe way by running that function inside the
+ * Call ppp_free() in a thread-safe way by running that function inside the
  * tcpip_thread context.
  */
-void
-pppapi_sighup(ppp_pcb *pcb)
+err_t
+pppapi_free(ppp_pcb *pcb)
 {
   struct pppapi_msg msg;
-  msg.function = pppapi_do_ppp_sighup;
-  msg.msg.ppp = pcb;
-  TCPIP_PPPAPI(&msg);
-}
-
-
-/**
- * Call ppp_delete() inside the tcpip_thread context.
- */
-static void
-pppapi_do_ppp_delete(struct pppapi_msg_msg *msg)
-{
-  msg->err = ppp_delete(msg->ppp);
-  TCPIP_PPPAPI_ACK(msg);
-}
-
-/**
- * Call ppp_delete() in a thread-safe way by running that function inside the
- * tcpip_thread context.
- */
-int
-pppapi_delete(ppp_pcb *pcb)
-{
-  struct pppapi_msg msg;
-  msg.function = pppapi_do_ppp_delete;
+  msg.function = pppapi_do_ppp_free;
   msg.msg.ppp = pcb;
   TCPIP_PPPAPI(&msg);
   return msg.msg.err;
@@ -370,8 +400,8 @@ pppapi_do_ppp_ioctl(struct pppapi_msg_msg *msg)
  * Call ppp_ioctl() in a thread-safe way by running that function inside the
  * tcpip_thread context.
  */
-int
-pppapi_ioctl(ppp_pcb *pcb, int cmd, void *arg)
+err_t
+pppapi_ioctl(ppp_pcb *pcb, u8_t cmd, void *arg)
 {
   struct pppapi_msg msg;
   msg.function = pppapi_do_ppp_ioctl;
@@ -382,58 +412,5 @@ pppapi_ioctl(ppp_pcb *pcb, int cmd, void *arg)
   return msg.msg.err;
 }
 
-
-#if LWIP_NETIF_STATUS_CALLBACK
-/**
- * Call ppp_set_netif_statuscallback() inside the tcpip_thread context.
- */
-static void
-pppapi_do_ppp_set_netif_statuscallback(struct pppapi_msg_msg *msg)
-{
-  ppp_set_netif_statuscallback(msg->ppp, msg->msg.netifstatuscallback.status_callback);
-  TCPIP_PPPAPI_ACK(msg);
-}
-
-/**
- * Call ppp_set_netif_statuscallback() in a thread-safe way by running that function inside the
- * tcpip_thread context.
- */
-void
-pppapi_set_netif_statuscallback(ppp_pcb *pcb, netif_status_callback_fn status_callback)
-{
-  struct pppapi_msg msg;
-  msg.function = pppapi_do_ppp_set_netif_statuscallback;
-  msg.msg.ppp = pcb;
-  msg.msg.msg.netifstatuscallback.status_callback = status_callback;
-  TCPIP_PPPAPI(&msg);
-}
-#endif /* LWIP_NETIF_STATUS_CALLBACK */
-
-
-#if LWIP_NETIF_LINK_CALLBACK
-/**
- * Call ppp_set_netif_linkcallback() inside the tcpip_thread context.
- */
-static void
-pppapi_do_ppp_set_netif_linkcallback(struct pppapi_msg_msg *msg)
-{
-  ppp_set_netif_linkcallback(msg->ppp, msg->msg.netiflinkcallback.link_callback);
-  TCPIP_PPPAPI_ACK(msg);
-}
-
-/**
- * Call ppp_set_netif_linkcallback() in a thread-safe way by running that function inside the
- * tcpip_thread context.
- */
-void
-pppapi_set_netif_linkcallback(ppp_pcb *pcb, netif_status_callback_fn link_callback)
-{
-  struct pppapi_msg msg;
-  msg.function = pppapi_do_ppp_set_netif_linkcallback;
-  msg.msg.ppp = pcb;
-  msg.msg.msg.netiflinkcallback.link_callback = link_callback;
-  TCPIP_PPPAPI(&msg);
-}
-#endif /* LWIP_NETIF_LINK_CALLBACK */
 
 #endif /* LWIP_PPP_API */

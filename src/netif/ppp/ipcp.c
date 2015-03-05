@@ -41,7 +41,7 @@
  */
 
 #include "lwip/opt.h"
-#if PPP_SUPPORT /* don't build if not configured for use in lwipopts.h */
+#if PPP_SUPPORT && PPP_IPV4_SUPPORT /* don't build if not configured for use in lwipopts.h */
 
 /*
  * TODO:
@@ -290,8 +290,9 @@ const struct protent ipcp_protent = {
 #if PRINTPKT_SUPPORT
     ipcp_printpkt,
 #endif /* PRINTPKT_SUPPORT */
+#if PPP_DATAINPUT
     NULL,
-    1,
+#endif /* PPP_DATAINPUT */
 #if PRINTPKT_SUPPORT
     "IPCP",
     "IP",
@@ -720,8 +721,13 @@ static void ipcp_resetci(fsm *f) {
     wo->req_dns1 = pcb->settings.usepeerdns;	/* Request DNS addresses from the peer */
     wo->req_dns2 = pcb->settings.usepeerdns;
     *go = *wo;
-    if (!pcb->ask_for_local)
+#if 0 /* UNUSED */
+    /* We don't need ask_for_local, this is only useful for setup which
+     * can determine the local IP address from the system hostname.
+     */
+    if (!ask_for_local)
 	go->ouraddr = 0;
+#endif /* UNUSED */
 #if 0 /* UNUSED */
     if (ip_choose_hook) {
 	ip_choose_hook(&wo->hisaddr);
@@ -1851,8 +1857,10 @@ static void ipcp_up(fsm *f) {
     }
 #endif /* Unused */
 
+#if VJ_SUPPORT
     /* set tcp compression */
     sifvjcomp(pcb, ho->neg_vj, ho->cflag, ho->maxslotindex);
+#endif /* VJ_SUPPORT */
 
 #if DEMAND_SUPPORT
     /*
@@ -2011,7 +2019,9 @@ static void ipcp_down(fsm *f) {
 	pcb->ipcp_is_up = 0;
 	np_down(pcb, PPP_IP);
     }
+#if VJ_SUPPORT
     sifvjcomp(pcb, 0, 0, 0);
+#endif /* VJ_SUPPORT */
 
 #if PPP_STATS_SUPPORT
     print_link_stats(); /* _after_ running the notifiers and ip_down_hook(),
@@ -2271,4 +2281,4 @@ ip_active_pkt(pkt, len)
 }
 #endif /* DEMAND_SUPPORT */
 
-#endif /* PPP_SUPPORT */
+#endif /* PPP_SUPPORT && PPP_IPV4_SUPPORT */

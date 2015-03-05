@@ -60,6 +60,7 @@
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
 #include "netif/ppp/ppp.h"
+#include "netif/ppp/pppos.h"
 #include "netif/ppp/pppoe.h"
 #include "netif/ppp/pppol2tp.h"
 #include "lwip/nd6.h"
@@ -130,7 +131,7 @@ static struct memp *memp_tab[MEMP_MAX];
 #endif /* MEMP_MEM_MALLOC */
 
 /** This array holds the element sizes of each pool. */
-#if !MEM_USE_POOLS && !MEMP_MEM_MALLOC
+#if !MEM_USE_POOLS && !MEMP_MEM_MALLOC && !MEMP_USE_CUSTOM_POOLS
 static
 #endif
 const u16_t memp_sizes[MEMP_MAX] = {
@@ -454,6 +455,9 @@ void
 memp_free(memp_t type, void *mem)
 {
   struct memp *memp;
+#ifdef LWIP_HOOK_MEMP_AVAILABLE
+  struct memp *old_first;
+#endif
   SYS_ARCH_DECL_PROTECT(old_level);
 
   if (mem == NULL) {
@@ -474,9 +478,12 @@ memp_free(memp_t type, void *mem)
 #endif /* MEMP_OVERFLOW_CHECK >= 2 */
 #endif /* MEMP_OVERFLOW_CHECK */
 
-  MEMP_STATS_DEC(used, type); 
-  
-  memp->next = memp_tab[type]; 
+  MEMP_STATS_DEC(used, type);
+
+  memp->next = memp_tab[type];
+#ifdef LWIP_HOOK_MEMP_AVAILABLE
+  old_first = memp_tab[type];
+#endif
   memp_tab[type] = memp;
 
 #if MEMP_SANITY_CHECK
@@ -484,6 +491,11 @@ memp_free(memp_t type, void *mem)
 #endif /* MEMP_SANITY_CHECK */
 
   SYS_ARCH_UNPROTECT(old_level);
+#ifdef LWIP_HOOK_MEMP_AVAILABLE
+  if (old_first == NULL) {
+    LWIP_HOOK_MEMP_AVAILABLE(type);
+  }
+#endif
 }
 
 #endif /* MEMP_MEM_MALLOC */

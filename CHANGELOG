@@ -6,9 +6,65 @@ HISTORY
 
   ++ New features:
 
-  2015-01-02: Simon Goldschmidt
-  * tcp.c: tcp_kill_prio(): prefer nearly-closed connections (waiting for the
-    last ACK only) over established connections when out of tcp pcbs
+  2015-03-05: Simon Goldschmidt
+  * netif.c, ip4.c, dhcp.c, autoip.c: fixed bug #37068 (netif up/down handling
+    is unclear): correclty separated administrative status of a netif (up/down)
+    from 'valid address' status
+    ATTENTION: netif_set_up() now always has to be called, even when dhcp/autoip
+    is used!
+
+  2015-02-26: patch by TabascoEye
+  * netif.c, udp.h/.c: fixed bug #40753 (re-bind UDP pcbs on change of IP address)
+
+  2015-02-22: chrysn, Simon Goldschmidt
+  * *.*: Changed nearly all functions taking 'ip(X)_addr_t' pointer to take
+    const pointers (changed user callbacks: raw_recv_fn, udp_recv_fn; changed
+    port callbacks: netif_output_fn, netif_igmp_mac_filter_fn)
+
+  2015-02-19: Ivan Delamer
+  * netif.h, dhcp.c: Removed unused netif flag for DHCP. The preferred way to evaluate
+    if DHCP is active is through netif->dhcp field.
+
+  2015-02-19: Ivan Delamer
+  * netif.h, slipif.c, ppp.c: Removed unused netif flag for point to point connections
+
+  2015-02-18: Simon Goldschmidt
+  * api_lib.c: fixed bug #37958 "netconn API doesn't handle correctly
+    connections half-closed by peer"
+
+  2015-02-18: Simon Goldschmidt
+  * tcp.c: tcp_alloc() prefers killing CLOSING/LAST_ACK over active connections
+    (see bug #39565)
+
+  2015-02-16: Claudius Zingerli, Sergio Caprile
+  * opt.h, dhcp.h/.c: patch #8361 "Add support for NTP option in DHCP"
+
+  2015-02-14: Simon Goldschmidt
+  * opt.h, snmp*: added support for write-access community and dedicated
+    community for sending traps
+
+  2015-02-13: Simon Goldschmidt
+  * opt.h, memp.c: added hook LWIP_HOOK_MEMP_AVAILABLE() to get informed when
+    a memp pool was empty and an item is now available
+
+  2015-02-13: Simon Goldschmidt
+  * opt.h, pbuf.h/.c, etharp.c: Added the option PBUF_LINK_ENCAPSULATION_HLEN to
+    allocate additional header space for TX on netifs requiring additional headers
+
+  2015-02-12: chrysn
+  * timers.h/.c: introduce sys_timeouts_sleeptime (returns the time left before
+    the next timeout is due, for NO_SYS==1)
+
+  2015-02-11: Nick van Ijzendoorn
+  * opt.h, sockets.h/c: patch #7702 "Include ability to increase the socket number
+    with defined offset"
+
+  2015-02-11: Frederick Baksik
+  * opt.h, def.h, others: patch #8423 "arch/perf.h" should be made an optional item
+
+  2015-02-11: Simon Goldschmidt
+  * api_msg.c, opt.h: started to implement fullduplex sockets/netconns
+    (note that this is highly unstable yet!)
 
   2015-01-17: Simon Goldschmidt
   * api: allow enabling socket API without (public) netconn API - netconn API is
@@ -156,7 +212,91 @@ HISTORY
 
   ++ Bugfixes:
 
-  2014-01-27: Simon Goldschmidt
+  2015-03-04: Simon Goldschmidt
+  * nd6.c: fixed bug #43784 (a host should send at least one Router Solicitation)
+
+  2015-03-04: Valery Ushakov
+  * ip6.c: fixed bug #41094 (Byte-order bug in IPv6 fragmentation header test)
+
+  2015-03-04: Zach Smith
+  * nd6.c: fixed bug #38153 (nd6_input() byte order issues)
+
+  2015-02-26: Simon Goldschmidt
+  * netif.c, tcp.h/.c: fixed bug #44378 (TCP connections are not aborted on netif
+    remove)
+
+  2015-02-25: Simon Goldschmidt
+  * ip4.c, etharp.c: fixed bug #40177 (System hangs when dealing with corrupted
+    packets), implemented task #12357 (Ensure that malicious packets don't
+    assert-fail): improved some pbuf_header calls to not assert-fail.
+
+  2015-02-25: patch by Joel Cunningham
+  * udp.h/.c, sockets.c: fixed bug #43028 (IP_MULTICAST_TTL affects unicast
+    datagrams)
+
+  2015-02-25: patch by Greg Renda
+  * ip4_frag.c: fixed bug #38210 (ip reassembly while remove oldest datagram)
+
+  2015-02-25: Simon Goldschmidt
+  * sockets.c: fixed bug #38165 (socket with mulicast): ensure igmp membership
+    are dropped when socket (not netconn!) is closed.
+
+  2015-02-25: Simon Goldschmidt
+  * ip4.h/.c, udp.c: fixed bug #38061 (wrong multicast routing in IPv4) by
+    adding an optional default netif for multicast routing
+
+  2015-02-25: Simon Goldschmidt
+  * netconn API: fixed that netconn_connect still used message passing for
+    LWIP_TCPIP_CORE_LOCKING==1
+
+  2015-02-22: patch by Jens Nielsen
+  * icmp.c: fixed bug #38803 (Source address in broadcast ping reply)
+
+  2015-02-22: Simon Goldschmidt
+  * udp.h, sockets.c: added proper accessor functions for pcb->multicast_ip
+    (previously used by get/setsockopt only)
+
+  2015-02-18: Simon Goldschmidt
+  * sockets.c: Fixed select not reporting received FIN as 'readable' in certain
+    rare cases (bug #43779: select(), close(), and TCP retransmission error)
+
+  2015-02-17: Simon Goldschmidt
+  * err.h, sockets.c, api_msg.c: fixed bug #38853 "connect() use a wrong errno":
+    return ERR_ALREADY/EALRADY during connect, ERR_ISCONN/EISCONN when already
+    connected
+
+  2015-02-17: Simon Goldschmidt
+  * tcp_impl.h, tcp_out.c, tcp.c, api_msg.c: fixed bug #37614 "Errors from
+    ipX_output are not processed". Now tcp_output(_segment) checks for the return
+    value of ipX_output and does not try to send more on error. A netif driver
+    can call tcp_txnow() (from tcpip_thread!) to try to send again if TX buffers
+    are available again.
+
+  2015-02-14: patches by Freddie Chopin
+  * snmp*: made community writable, fixed some const pointers
+
+  2015-02-13: Simon Goldschmidt
+  * msg_in.c: fixed bug #22070 "MIB_OBJECT_WRITE_ONLY not implemented in SNMP"
+
+  2015-02-12: Simon Goldschmidt
+  * ip.h, ip4.c, ip6.c: fixed bug #36403 "ip4_input() and ip6_input() always pass
+    inp to higher layers": now the accepting netif is passed up, but the input
+    netif is available through ip_current_input_netif() if required.
+
+  2015-02-11: patch by hichard
+  * tcpip.c: fixed bug #43094 "The function tcpip_input() forget to handle IPv6"
+
+  2015-02-10: Simon Goldschmidt
+  * netconn API: fixed that netconn_close/netconn_delete still used message passing
+    for LWIP_TCPIP_CORE_LOCKING==1
+
+  2015-02-10: Simon Goldschmidt
+  * netconn/socket api: fixed bug #44225 "closing TCP socket should time out
+    eventually", implemented task #6930 "Implement SO_LINGER": closing TCP sockets
+    times out after 20 seconds or after the configured SND_TIMEOUT or depending
+    on the linger settings.
+
+  2015-01-27: Simon Goldschmidt
   * api_msg.c: fixed that SHUT_RD followed by SHUT_WR was different to SHUT_RDWR,
     fixed return value of lwip_netconn_do_close on unconnected netconns
 

@@ -111,8 +111,9 @@ const struct protent ecp_protent = {
 #if PRINTPKT_SUPPORT
     ecp_printpkt,
 #endif /* PRINTPKT_SUPPORT */
+#if PPP_DATAINPUT
     NULL, /* ecp_datainput, */
-    0,
+#endif /* PPP_DATAINPUT */
 #if PRINTPKT_SUPPORT
     "ECP",
     "Encrypted",

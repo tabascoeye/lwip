@@ -112,26 +112,30 @@ PACK_STRUCT_END
 
 
 #define ip_init() /* Compatibility define, no init needed. */
-struct netif *ip_route(ip_addr_t *dest);
+struct netif *ip_route(const ip_addr_t *dest);
 err_t ip_input(struct pbuf *p, struct netif *inp);
-err_t ip_output(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
+err_t ip_output(struct pbuf *p, const ip_addr_t *src, const ip_addr_t *dest,
        u8_t ttl, u8_t tos, u8_t proto);
-err_t ip_output_if(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
+err_t ip_output_if(struct pbuf *p, const ip_addr_t *src, const ip_addr_t *dest,
        u8_t ttl, u8_t tos, u8_t proto, struct netif *netif);
-err_t ip_output_if_src(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
+err_t ip_output_if_src(struct pbuf *p, const ip_addr_t *src, const ip_addr_t *dest,
        u8_t ttl, u8_t tos, u8_t proto, struct netif *netif);
 #if LWIP_NETIF_HWADDRHINT
-err_t ip_output_hinted(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
+err_t ip_output_hinted(struct pbuf *p, const ip_addr_t *src, const ip_addr_t *dest,
        u8_t ttl, u8_t tos, u8_t proto, u8_t *addr_hint);
 #endif /* LWIP_NETIF_HWADDRHINT */
 #if IP_OPTIONS_SEND
-err_t ip_output_if_opt(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
+err_t ip_output_if_opt(struct pbuf *p, const ip_addr_t *src, const ip_addr_t *dest,
        u8_t ttl, u8_t tos, u8_t proto, struct netif *netif, void *ip_options,
        u16_t optlen);
-err_t ip_output_if_opt_src(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
+err_t ip_output_if_opt_src(struct pbuf *p, const ip_addr_t *src, const ip_addr_t *dest,
        u8_t ttl, u8_t tos, u8_t proto, struct netif *netif, void *ip_options,
        u16_t optlen);
 #endif /* IP_OPTIONS_SEND */
+
+#if LWIP_IGMP
+void  ip_set_default_multicast_netif(struct netif* default_multicast_netif);
+#endif /* LWIP_IGMP */
 
 #define ip_netif_get_local_ipX(netif) (((netif) != NULL) ? ip_2_ipX(&((netif)->ip_addr)) : NULL)
 

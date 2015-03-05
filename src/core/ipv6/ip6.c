@@ -78,7 +78,7 @@
  * @return the netif on which to send to reach dest
  */
 struct netif *
-ip6_route(struct ip6_addr *src, struct ip6_addr *dest)
+ip6_route(const struct ip6_addr *src, const struct ip6_addr *dest)
 {
   struct netif *netif;
   s8_t i;
@@ -156,7 +156,7 @@ ip6_route(struct ip6_addr *src, struct ip6_addr *dest)
  *         source address is found
  */
 ip6_addr_t *
-ip6_select_source_address(struct netif *netif, ip6_addr_t * dest)
+ip6_select_source_address(struct netif *netif, const ip6_addr_t * dest)
 {
   ip6_addr_t * src = NULL;
   u8_t i;
@@ -397,6 +397,7 @@ ip6_input(struct pbuf *p, struct netif *inp)
 
   /* In netif, used in case we need to send ICMPv6 packets back. */
   ip_data.current_netif = inp;
+  ip_data.current_input_netif = inp;
 
   /* match packet against an interface, i.e. is this packet for us? */
   if (ip6_addr_ismulticast(ip6_current_dest_addr())) {
@@ -606,14 +607,12 @@ netif_found:
       }
 
       /* Offset == 0 and more_fragments == 0? */
-      if (((frag_hdr->_fragment_offset & IP6_FRAG_OFFSET_MASK) == 0) &&
-          ((frag_hdr->_fragment_offset & IP6_FRAG_MORE_FLAG) == 0)) {
-
+      if ((frag_hdr->_fragment_offset &
+           PP_HTONS(IP6_FRAG_OFFSET_MASK | IP6_FRAG_MORE_FLAG)) == 0) {
         /* This is a 1-fragment packet, usually a packet that we have
          * already reassembled. Skip this header anc continue. */
         pbuf_header(p, -hlen);
-      }
-      else {
+      } else {
 #if LWIP_IPV6_REASS
 
         /* reassemble the packet */
@@ -708,6 +707,7 @@ options_done:
 
 ip6_input_cleanup:
   ip_data.current_netif = NULL;
+  ip_data.current_input_netif = NULL;
   ip_data.current_ip6_header = NULL;
   ip_data.current_ip_header_tot_len = 0;
   ip6_addr_set_any(&ip_data.current_iphdr_src.ip6);
@@ -742,11 +742,11 @@ ip6_input_cleanup:
  *         returns errors returned by netif->output
  */
 err_t
-ip6_output_if(struct pbuf *p, ip6_addr_t *src, ip6_addr_t *dest,
+ip6_output_if(struct pbuf *p, const ip6_addr_t *src, const ip6_addr_t *dest,
              u8_t hl, u8_t tc,
              u8_t nexth, struct netif *netif)
 {
-  ip6_addr_t *src_used = src;
+  const ip6_addr_t *src_used = src;
   if (dest != IP_HDRINCL) {
     if (src != NULL && ip6_addr_isany(src)) {
       src = ip6_select_source_address(netif, dest);
@@ -766,7 +766,7 @@ ip6_output_if(struct pbuf *p, ip6_addr_t *src, ip6_addr_t *dest,
  * when it is 'any'.
  */
 err_t
-ip6_output_if_src(struct pbuf *p, ip6_addr_t *src, ip6_addr_t *dest,
+ip6_output_if_src(struct pbuf *p, const ip6_addr_t *src, const ip6_addr_t *dest,
              u8_t hl, u8_t tc,
              u8_t nexth, struct netif *netif)
 {

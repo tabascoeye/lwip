@@ -417,6 +417,14 @@
 #endif
 
 /**
+ * MEMP_NUM_PPPOS_INTERFACES: the number of concurrently active PPPoS
+ * interfaces (only used with PPPOS_SUPPORT==1)
+ */
+#ifndef MEMP_NUM_PPPOS_INTERFACES
+#define MEMP_NUM_PPPOS_INTERFACES       MEMP_NUM_PPP_PCB
+#endif
+
+/**
  * MEMP_NUM_PPPOE_INTERFACES: the number of concurrently active PPPoE
  * interfaces (only used with PPPOE_SUPPORT==1)
  */
@@ -768,6 +776,22 @@
 #define LWIP_DHCP_BOOTP_FILE            0
 #endif
 
+/**
+ * LWIP_DHCP_GETS_NTP==1: Request NTP servers with discover/select. For each
+ * response packet, an callback is called, which has to be provided by the port:
+ * void dhcp_set_ntp_servers(u8_t num_ntp_servers, ip_addr_t* ntp_server_addrs);
+*/
+#ifndef LWIP_DHCP_GET_NTP_SRV
+#define LWIP_DHCP_GET_NTP_SRV           0
+#endif
+
+/**
+ * The maximum of NTP servers requested
+ */
+#ifndef LWIP_DHCP_MAX_NTP_SERVERS
+#define LWIP_DHCP_MAX_NTP_SERVERS       1
+#endif
+
 /*
    ------------------------------------
    ---------- AUTOIP options ----------
@@ -871,6 +895,37 @@
 #ifndef SNMP_MAX_VALUE_SIZE
 #define SNMP_MAX_VALUE_SIZE             LWIP_MAX((SNMP_MAX_OCTET_STRING_LEN)+1, sizeof(s32_t)*(SNMP_MAX_TREE_DEPTH))
 #endif
+
+/**
+ * The snmp read-access community. Used for write-access and traps, too
+ * unless SNMP_COMMUNITY_WRITE or SNMP_COMMUNITY_TRAP are enabled, respectively.
+ */
+#ifndef SNMP_COMMUNITY
+#define SNMP_COMMUNITY                  "public"
+#endif
+
+/**
+ * Set this to 1 to enable support for dedicated write-access and trap communities.
+ */
+#ifndef SNMP_COMMUNITY_EXT
+#define SNMP_COMMUNITY_EXT              0
+#endif
+
+#if SNMP_COMMUNITY_EXT
+/**
+ * The snmp write-access community.
+ */
+#ifndef SNMP_COMMUNITY_WRITE
+#define SNMP_COMMUNITY_WRITE            "private"
+#endif
+
+/**
+ * The snmp community used for sending traps.
+ */
+#ifndef SNMP_COMMUNITY_TRAP
+#define SNMP_COMMUNITY_TRAP             "public"
+#endif
+#endif /* SNMP_COMMUNITY_EXT */
 
 /*
    ----------------------------------
@@ -1190,6 +1245,14 @@
 #endif
 
 /**
+ * PBUF_LINK_ENCAPSULATION_HLEN: the number of bytes that should be allocated
+ * for an additional encapsulation header before ethernet headers (e.g. 802.11)
+ */
+#ifndef PBUF_LINK_ENCAPSULATION_HLEN
+#define PBUF_LINK_ENCAPSULATION_HLEN    0
+#endif
+
+/**
  * PBUF_POOL_BUFSIZE: the size of each pbuf in the pbuf pool. The default is
  * designed to accommodate single full size TCP frame in one pbuf, including
  * TCP_MSS, IP header, and link header.
@@ -1497,6 +1560,18 @@
 #define LWIP_NETCONN_SEM_PER_THREAD     0
 #endif
 
+/** LWIP_NETCONN_FULLDUPLEX==1: Enable code that allows reading from one thread,
+ * writing from a 2nd thread and closing from a 3rd thread at the same time.
+ * ATTENTION: This is currently really alpha! Some requirements:
+ * - LWIP_NETCONN_SEM_PER_THREAD==1 is required to use one socket/netconn from
+ *   multiple threads at once
+ * - sys_mbox_free() has to unblock receive tasks waiting on recvmbox/acceptmbox
+ *   and prevent a task pending on this during/after deletion
+ */
+#ifndef LWIP_NETCONN_FULLDUPLEX
+#define LWIP_NETCONN_FULLDUPLEX         0
+#endif
+
 /*
    ------------------------------------
    ---------- Socket options ----------
@@ -1531,6 +1606,17 @@
  */
 #ifndef LWIP_POSIX_SOCKETS_IO_NAMES
 #define LWIP_POSIX_SOCKETS_IO_NAMES     1
+#endif
+
+/**
+ * LWIP_SOCKET_OFFSET==n: Increases the file descriptor number created by LwIP with n.
+ * This can be useful when there are multiple APIs which create file descriptors.
+ * When they all start with a different offset and you won't make them overlap you can
+ * re implement read/write/close/ioctl/fnctl to send the requested action to the right
+ * library (sharing select will need more work though).
+ */
+#ifndef LWIP_SOCKET_OFFSET
+#define LWIP_SOCKET_OFFSET              0
 #endif
 
 /**
@@ -1574,10 +1660,24 @@
 #endif
 
 /**
+ * LWIP_SO_LINGER==1: Enable SO_LINGER processing.
+ */
+#ifndef LWIP_SO_LINGER
+#define LWIP_SO_LINGER                  0
+#endif
+
+/**
  * If LWIP_SO_RCVBUF is used, this is the default value for recv_bufsize.
  */
 #ifndef RECV_BUFSIZE_DEFAULT
 #define RECV_BUFSIZE_DEFAULT            INT_MAX
+#endif
+
+/**
+ * By default, TCP socket/netconn close waits 20 seconds max to send the FIN
+ */
+#ifndef LWIP_TCP_CLOSE_TIMEOUT_MS_DEFAULT
+#define LWIP_TCP_CLOSE_TIMEOUT_MS_DEFAULT 20000
 #endif
 
 /**
@@ -1834,10 +1934,17 @@
 #endif
 
 /**
+ * PPP_IPV4_SUPPORT==1: Enable PPP IPv4 support
+ */
+#ifndef PPP_IPV4_SUPPORT
+#define PPP_IPV4_SUPPORT                1
+#endif
+
+/**
  * PPP_IPV6_SUPPORT==1: Enable PPP IPv6 support
  */
 #ifndef PPP_IPV6_SUPPORT
-#define PPP_IPV6_SUPPORT                0
+#define PPP_IPV6_SUPPORT                (LWIP_IPV6)
 #endif
 
 /**
@@ -1942,11 +2049,18 @@
 #endif
 
 /**
- * PPP_SERVER==1: Enable PPP server support (waiting for incoming PPP session). CURRENTLY NOT SUPPORTED! DO NOT SET!
+ * PPP_SERVER==1: Enable PPP server support (waiting for incoming PPP session).
+ *
+ * Currently only supported for PPPoS.
  */
 #ifndef PPP_SERVER
 #define PPP_SERVER                      0
 #endif
+#if PPP_SERVER
+#ifndef PPP_OUR_NAME
+#define PPP_OUR_NAME                    "lwIP"   /* Our name for authentication purposes */
+#endif
+#endif /* PPP_SERVER */
 
 /**
  * VJ_SUPPORT==1: Support VJ header compression.
@@ -1954,9 +2068,9 @@
 #ifndef VJ_SUPPORT
 #define VJ_SUPPORT                      1
 #endif
-#if !PPPOS_SUPPORT
+#if !PPPOS_SUPPORT || !PPP_IPV4_SUPPORT
 #undef VJ_SUPPORT
-#define VJ_SUPPORT                      0   /*  Only PPPoS may need VJ compression */
+#define VJ_SUPPORT                      0   /* VJ compression is only supported for PPPoS. */
 #endif /* !PPPOS_SUPPORT */
 
 /**
@@ -1995,9 +2109,7 @@
  * If set (=1), the default if required by another enabled PPP feature unless
  * explicitly set to 0, using included lwIP PolarSSL.
  * 
- * If clear (=0), using external PolarSSL.
- * 
- * Undefined if not needed.
+ * If clear (=0), not needed or using external PolarSSL.
  * 
  * Beware of the stack requirements which can be a lot larger if you are not
  * using our cleaned PolarSSL library.
@@ -2020,6 +2132,20 @@
 #define LWIP_INCLUDED_POLARSSL_DES        1 /* MSCHAP require DES support */
 #endif /* LWIP_INCLUDED_POLARSSL_DES */
 #endif /* MSCHAP_SUPPORT */
+
+/* Default value if unset */
+#ifndef LWIP_INCLUDED_POLARSSL_MD4
+#define LWIP_INCLUDED_POLARSSL_MD4        0
+#endif /* LWIP_INCLUDED_POLARSSL_MD4 */
+#ifndef LWIP_INCLUDED_POLARSSL_MD5
+#define LWIP_INCLUDED_POLARSSL_MD5        0
+#endif /* LWIP_INCLUDED_POLARSSL_MD5 */
+#ifndef LWIP_INCLUDED_POLARSSL_SHA1
+#define LWIP_INCLUDED_POLARSSL_SHA1       0
+#endif /* LWIP_INCLUDED_POLARSSL_SHA1 */
+#ifndef LWIP_INCLUDED_POLARSSL_DES
+#define LWIP_INCLUDED_POLARSSL_DES        0
+#endif /* LWIP_INCLUDED_POLARSSL_DES */
 
 /*
  * Timeouts
@@ -2063,8 +2189,8 @@
 #endif
 
 #if PPP_SERVER
-#ifndef CHAP_DEFREQTIME
-#define CHAP_DEFREQTIME                 30      /* Time to wait for auth-req from peer */
+#ifndef CHAP_DEFRECHALLENGETIME
+#define CHAP_DEFRECHALLENGETIME         0       /* If this option is > 0, rechallenge the peer every n seconds */
 #endif
 #endif /* PPP_SERVER */
 
@@ -2502,6 +2628,11 @@
  * Hook can be used to set prio_vid field of vlan_hdr.
  */
 
+/**
+ * LWIP_HOOK_MEMP_AVAILABLE(memp_t_type):
+ * - called from memp_free() when a memp pool was empty and an item is now available
+ */
+
 /*
    ---------------------------------------
    ---------- Debugging options ----------
@@ -2768,6 +2899,19 @@
  */
 #ifndef IP6_DEBUG
 #define IP6_DEBUG                       LWIP_DBG_OFF
+#endif
+
+/*
+   --------------------------------------------------
+   ---------- Performance tracking options ----------
+   --------------------------------------------------
+*/
+/**
+ * LWIP_PERF: Enable performance testing for lwIP
+ * (if enabled, arch/perf.h is included)
+ */
+#ifndef LWIP_PERF
+#define LWIP_PERF                       0
 #endif
 
 #endif /* LWIP_HDR_OPT_H */

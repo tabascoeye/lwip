@@ -264,7 +264,7 @@ etharp_tmr(void)
  * entry is found or could be recycled.
  */
 static s8_t
-etharp_find_entry(ip_addr_t *ipaddr, u8_t flags)
+etharp_find_entry(const ip_addr_t *ipaddr, u8_t flags)
 {
   s8_t old_pending = ARP_TABLE_SIZE, old_stable = ARP_TABLE_SIZE;
   s8_t empty = ARP_TABLE_SIZE;
@@ -462,7 +462,7 @@ etharp_send_ip(struct netif *netif, struct pbuf *p, struct eth_addr *src, struct
  * @see pbuf_free()
  */
 static err_t
-etharp_update_arp_entry(struct netif *netif, ip_addr_t *ipaddr, struct eth_addr *ethaddr, u8_t flags)
+etharp_update_arp_entry(struct netif *netif, const ip_addr_t *ipaddr, struct eth_addr *ethaddr, u8_t flags)
 {
   s8_t i;
   LWIP_ASSERT("netif->hwaddr_len == ETHARP_HWADDR_LEN", netif->hwaddr_len == ETHARP_HWADDR_LEN);
@@ -540,7 +540,7 @@ etharp_update_arp_entry(struct netif *netif, ip_addr_t *ipaddr, struct eth_addr 
  * @return @see return values of etharp_add_static_entry
  */
 err_t
-etharp_add_static_entry(ip_addr_t *ipaddr, struct eth_addr *ethaddr)
+etharp_add_static_entry(const ip_addr_t *ipaddr, struct eth_addr *ethaddr)
 {
   struct netif *netif;
   LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_add_static_entry: %"U16_F".%"U16_F".%"U16_F".%"U16_F" - %02"X16_F":%02"X16_F":%02"X16_F":%02"X16_F":%02"X16_F":%02"X16_F"\n",
@@ -565,7 +565,7 @@ etharp_add_static_entry(ip_addr_t *ipaddr, struct eth_addr *ethaddr)
  *         ERR_ARG: entry wasn't a static entry but a dynamic one
  */
 err_t
-etharp_remove_static_entry(ip_addr_t *ipaddr)
+etharp_remove_static_entry(const ip_addr_t *ipaddr)
 {
   s8_t i;
   LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_remove_static_entry: %"U16_F".%"U16_F".%"U16_F".%"U16_F"\n",
@@ -617,8 +617,8 @@ void etharp_cleanup_netif(struct netif *netif)
  * @return table index if found, -1 otherwise
  */
 s8_t
-etharp_find_addr(struct netif *netif, ip_addr_t *ipaddr,
-         struct eth_addr **eth_ret, ip_addr_t **ip_ret)
+etharp_find_addr(struct netif *netif, const ip_addr_t *ipaddr,
+         struct eth_addr **eth_ret, const ip_addr_t **ip_ret)
 {
   s8_t i;
 
@@ -893,11 +893,11 @@ etharp_output_to_arp_index(struct netif *netif, struct pbuf *q, u8_t arp_idx)
  * or the return type of either etharp_query() or etharp_send_ip().
  */
 err_t
-etharp_output(struct netif *netif, struct pbuf *q, ip_addr_t *ipaddr)
+etharp_output(struct netif *netif, struct pbuf *q, const ip_addr_t *ipaddr)
 {
   struct eth_addr *dest;
   struct eth_addr mcastaddr;
-  ip_addr_t *dst_addr = ipaddr;
+  const ip_addr_t *dst_addr = ipaddr;
 
   LWIP_ASSERT("netif != NULL", netif != NULL);
   LWIP_ASSERT("q != NULL", q != NULL);
@@ -1045,7 +1045,7 @@ etharp_output(struct netif *netif, struct pbuf *q, ip_addr_t *ipaddr)
  *
  */
 err_t
-etharp_query(struct netif *netif, ip_addr_t *ipaddr, struct pbuf *q)
+etharp_query(struct netif *netif, const ip_addr_t *ipaddr, struct pbuf *q)
 {
   struct eth_addr * srcaddr = (struct eth_addr *)netif->hwaddr;
   err_t result = ERR_MEM;
@@ -1128,7 +1128,7 @@ etharp_query(struct netif *netif, ip_addr_t *ipaddr, struct pbuf *q)
     }
     if(copy_needed) {
       /* copy the whole packet into new pbufs */
-      p = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
+      p = pbuf_alloc(PBUF_RAW_TX, p->tot_len, PBUF_RAM);
       if(p != NULL) {
         if (pbuf_copy(p, q) != ERR_OK) {
           pbuf_free(p);
@@ -1240,7 +1240,7 @@ etharp_raw(struct netif *netif, const struct eth_addr *ethsrc_addr,
   LWIP_ASSERT("netif != NULL", netif != NULL);
 
   /* allocate a pbuf for the outgoing ARP request packet */
-  p = pbuf_alloc(PBUF_RAW, SIZEOF_ETHARP_PACKET_TX, PBUF_RAM);
+  p = pbuf_alloc(PBUF_RAW_TX, SIZEOF_ETHARP_PACKET_TX, PBUF_RAM);
   /* could allocate a pbuf for an ARP request? */
   if (p == NULL) {
     LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_LEVEL_SERIOUS,
@@ -1326,7 +1326,7 @@ etharp_raw(struct netif *netif, const struct eth_addr *ethsrc_addr,
  *         any other err_t on failure
  */
 err_t
-etharp_request(struct netif *netif, ip_addr_t *ipaddr)
+etharp_request(struct netif *netif, const ip_addr_t *ipaddr)
 {
   LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_request: sending ARP request.\n"));
   return etharp_raw(netif, (struct eth_addr *)netif->hwaddr, &ethbroadcast,
@@ -1427,8 +1427,11 @@ ethernet_input(struct pbuf *p, struct netif *netif)
       etharp_ip_input(netif, p);
 #endif /* ETHARP_TRUST_IP_MAC */
       /* skip Ethernet header */
-      if(pbuf_header(p, (s16_t)-ip_hdr_offset)) {
-        LWIP_ASSERT("Can't move over header in packet", 0);
+      if ((p->len < ip_hdr_offset) || pbuf_header(p, (s16_t)-ip_hdr_offset)) {
+        LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_LEVEL_WARNING,
+          ("ethernet_input: IPv4 packet dropped, too short (%"S16_F"/%"S16_F")\n",
+          p->tot_len, ip_hdr_offset));
+        LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("Can't move over header in packet"));
         goto free_and_return;
       } else {
         /* pass to IP layer */
@@ -1457,8 +1460,10 @@ ethernet_input(struct pbuf *p, struct netif *netif)
 #if LWIP_IPV6
     case PP_HTONS(ETHTYPE_IPV6): /* IPv6 */
       /* skip Ethernet header */
-      if(pbuf_header(p, -(s16_t)SIZEOF_ETH_HDR)) {
-        LWIP_ASSERT("Can't move over header in packet", 0);
+      if((p->len < ip_hdr_offset) || pbuf_header(p, (s16_t)-ip_hdr_offset)) {
+        LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_LEVEL_WARNING,
+          ("ethernet_input: IPv6 packet dropped, too short (%"S16_F"/%"S16_F")\n",
+          p->tot_len, ip_hdr_offset));
         goto free_and_return;
       } else {
         /* pass to IPv6 layer */

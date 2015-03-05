@@ -86,7 +86,7 @@ struct udp_pcb;
  * @param port the remote port from which the packet was received
  */
 typedef void (*udp_recv_fn)(void *arg, struct udp_pcb *pcb, struct pbuf *p,
-    ip_addr_t *addr, u16_t port);
+    const ip_addr_t *addr, u16_t port);
 
 #if LWIP_IPV6
 /** Function prototype for udp pcb IPv6 receive callback functions
@@ -124,6 +124,8 @@ struct udp_pcb {
 #if LWIP_IGMP
   /** outgoing network interface for multicast packets */
   ip_addr_t multicast_ip;
+  /** TTL for outgoing multicast packets */
+  u8_t mcast_ttl;
 #endif /* LWIP_IGMP */
 
 #if LWIP_UDPLITE
@@ -146,36 +148,36 @@ extern struct udp_pcb *udp_pcbs;
    UDP code. */
 struct udp_pcb * udp_new        (void);
 void             udp_remove     (struct udp_pcb *pcb);
-err_t            udp_bind       (struct udp_pcb *pcb, ip_addr_t *ipaddr,
+err_t            udp_bind       (struct udp_pcb *pcb, const ip_addr_t *ipaddr,
                                  u16_t port);
-err_t            udp_connect    (struct udp_pcb *pcb, ip_addr_t *ipaddr,
+err_t            udp_connect    (struct udp_pcb *pcb, const ip_addr_t *ipaddr,
                                  u16_t port);
 void             udp_disconnect (struct udp_pcb *pcb);
 void             udp_recv       (struct udp_pcb *pcb, udp_recv_fn recv,
                                  void *recv_arg);
 err_t            udp_sendto_if  (struct udp_pcb *pcb, struct pbuf *p,
-                                 ip_addr_t *dst_ip, u16_t dst_port,
+                                 const ip_addr_t *dst_ip, u16_t dst_port,
                                  struct netif *netif);
 err_t            udp_sendto_if_src(struct udp_pcb *pcb, struct pbuf *p,
-                                 ip_addr_t *dst_ip, u16_t dst_port,
-                                 struct netif *netif, ip_addr_t *src_ip);
+                                 const ip_addr_t *dst_ip, u16_t dst_port,
+                                 struct netif *netif, const ip_addr_t *src_ip);
 err_t            udp_sendto     (struct udp_pcb *pcb, struct pbuf *p,
-                                 ip_addr_t *dst_ip, u16_t dst_port);
+                                 const ip_addr_t *dst_ip, u16_t dst_port);
 err_t            udp_send       (struct udp_pcb *pcb, struct pbuf *p);
 
 #if LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP
 err_t            udp_sendto_if_chksum(struct udp_pcb *pcb, struct pbuf *p,
-                                 ip_addr_t *dst_ip, u16_t dst_port,
+                                 const ip_addr_t *dst_ip, u16_t dst_port,
                                  struct netif *netif, u8_t have_chksum,
                                  u16_t chksum);
 err_t            udp_sendto_chksum(struct udp_pcb *pcb, struct pbuf *p,
-                                 ip_addr_t *dst_ip, u16_t dst_port,
+                                 const ip_addr_t *dst_ip, u16_t dst_port,
                                  u8_t have_chksum, u16_t chksum);
 err_t            udp_send_chksum(struct udp_pcb *pcb, struct pbuf *p,
                                  u8_t have_chksum, u16_t chksum);
 err_t            udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p,
-                                 ip_addr_t *dst_ip, u16_t dst_port, struct netif *netif,
-                                 u8_t have_chksum, u16_t chksum, ip_addr_t *src_ip);
+                                 const ip_addr_t *dst_ip, u16_t dst_port, struct netif *netif,
+                                 u8_t have_chksum, u16_t chksum, const ip_addr_t *src_ip);
 #endif /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
 
 #define          udp_flags(pcb) ((pcb)->flags)
@@ -206,11 +208,20 @@ struct udp_pcb * udp_new_ip6(void);
 #endif /*LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
 #endif /* LWIP_IPV6 */
 
+#if LWIP_IGMP
+#define udp_set_multicast_netif_addr(pcb, ip4addr) do { (pcb)->multicast_ip = *(ip4addr); } while(0)
+#define udp_get_multicast_netif_addr(pcb)          (&(pcb)->multicast_ip)
+#define udp_set_multicast_ttl(pcb, mcast_ttl)      do { (pcb)->mcast_ttl = mcast_ttl; } while(0)
+#define udp_get_multicast_ttl(pcb)                 ((pcb)->mcast_ttl)
+#endif /* LWIP_IGMP */
+
 #if UDP_DEBUG
 void udp_debug_print(struct udp_hdr *udphdr);
 #else
 #define udp_debug_print(udphdr)
 #endif
+
+void udp_netif_ipv4_addr_changed(const ip_addr_t* old_addr, const ip_addr_t* new_addr);
 
 #ifdef __cplusplus
 }

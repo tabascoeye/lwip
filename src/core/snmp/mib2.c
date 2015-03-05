@@ -2022,7 +2022,7 @@ void snmp_inc_snmpouttraps(void)
   snmpouttraps++;
 }
 
-void snmp_get_snmpgrpid_ptr(struct snmp_obj_id **oid)
+void snmp_get_snmpgrpid_ptr(const struct snmp_obj_id **oid)
 {
   *oid = &snmpgrp_id;
 }
@@ -2704,7 +2704,7 @@ atentry_get_value(struct obj_def *od, u16_t len, void *value)
 #if LWIP_ARP
   u8_t id;
   struct eth_addr* ethaddr_ret;
-  ip_addr_t* ipaddr_ret;
+  const ip_addr_t* ipaddr_ret;
 #endif /* LWIP_ARP */
   ip_addr_t ip;
   struct netif *netif;
@@ -3410,7 +3410,7 @@ ip_ntomentry_get_value(struct obj_def *od, u16_t len, void *value)
 #if LWIP_ARP
   u8_t id;
   struct eth_addr* ethaddr_ret;
-  ip_addr_t* ipaddr_ret;
+  const ip_addr_t* ipaddr_ret;
 #endif /* LWIP_ARP */
   ip_addr_t ip;
   struct netif *netif;

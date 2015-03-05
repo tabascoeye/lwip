@@ -52,6 +52,12 @@
 #include "lwip/snmp_asn1.h"
 #include "lwip/snmp_msg.h"
 
+#include <string.h>
+
+#if !SNMP_COMMUNITY_EXT
+#define snmp_community_trap snmp_community
+#endif
+
 struct snmp_trap_dst
 {
   /* destination IP address in network order */
@@ -216,7 +222,7 @@ snmp_send_response(struct snmp_msg_pstat *m_stat)
  * (sysObjectID) for specific traps.
  */
 err_t
-snmp_send_trap(s8_t generic_trap, struct snmp_obj_id *eoid, s32_t specific_trap)
+snmp_send_trap(s8_t generic_trap, const struct snmp_obj_id *eoid, s32_t specific_trap)
 {
   struct snmp_trap_dst *td;
   struct netif *dst_if;
@@ -398,7 +404,7 @@ snmp_trap_header_sum(struct snmp_msg_trap *m_trap, u16_t vb_len)
   snmp_asn1_enc_length_cnt(thl->pdulen, &thl->pdulenlen);
   tot_len += 1 + thl->pdulenlen;
 
-  thl->comlen = sizeof(snmp_publiccommunity) - 1;
+  thl->comlen = strlen(snmp_community_trap);
   snmp_asn1_enc_length_cnt(thl->comlen, &thl->comlenlen);
   tot_len += 1 + thl->comlenlen + thl->comlen;
 
@@ -565,7 +571,7 @@ snmp_trap_header_enc(struct snmp_msg_trap *m_trap, struct pbuf *p)
   ofs += 1;
   snmp_asn1_enc_length(p, ofs, m_trap->thl.comlen);
   ofs += m_trap->thl.comlenlen;
-  snmp_asn1_enc_raw(p, ofs, m_trap->thl.comlen, (u8_t *)&snmp_publiccommunity[0]);
+  snmp_asn1_enc_raw(p, ofs, m_trap->thl.comlen, (u8_t *)&snmp_community_trap[0]);
   ofs += m_trap->thl.comlen;
 
   snmp_asn1_enc_type(p, ofs, (SNMP_ASN1_CONTXT | SNMP_ASN1_CONSTR | SNMP_ASN1_PDU_TRAP));
