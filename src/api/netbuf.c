@@ -61,7 +61,7 @@ netbuf *netbuf_new(void)
   if (buf != NULL) {
     buf->p = NULL;
     buf->ptr = NULL;
-    ipX_addr_set_any(LWIP_IPV6, &buf->addr);
+    ip_addr_set_zero(&buf->addr);
     buf->port = 0;
 #if LWIP_NETBUF_RECVINFO || LWIP_CHECKSUM_ON_COPY
 #if LWIP_CHECKSUM_ON_COPY
@@ -69,7 +69,7 @@ netbuf *netbuf_new(void)
 #endif /* LWIP_CHECKSUM_ON_COPY */
     buf->toport_chksum = 0;
 #if LWIP_NETBUF_RECVINFO
-    ipX_addr_set_any(LWIP_IPV6, &buf->toaddr);
+    ip_addr_set_zero(&buf->toaddr);
 #endif /* LWIP_NETBUF_RECVINFO */
 #endif /* LWIP_NETBUF_RECVINFO || LWIP_CHECKSUM_ON_COPY */
     return buf;
@@ -158,7 +158,7 @@ netbuf_ref(struct netbuf *buf, const void *dataptr, u16_t size)
     buf->ptr = NULL;
     return ERR_MEM;
   }
-  buf->p->payload = (void*)dataptr;
+  ((struct pbuf_rom*)buf->p)->payload = dataptr;
   buf->p->len = buf->p->tot_len = size;
   buf->ptr = buf->p;
   return ERR_OK;

@@ -71,17 +71,33 @@
 #define LWIP_NETCONN 0
 #endif
 
-#define IP4ADDR_PORT_TO_SOCKADDR(sin, ipXaddr, port) do { \
+#if LWIP_IPV4
+#define IP4ADDR_PORT_TO_SOCKADDR(sin, ipaddr, port) do { \
       (sin)->sin_len = sizeof(struct sockaddr_in); \
       (sin)->sin_family = AF_INET; \
       (sin)->sin_port = htons((port)); \
-      inet_addr_from_ipaddr(&(sin)->sin_addr, ipX_2_ip(ipXaddr)); \
+      inet_addr_from_ipaddr(&(sin)->sin_addr, ipaddr); \
       memset((sin)->sin_zero, 0, SIN_ZERO_LEN); }while(0)
-#define SOCKADDR4_TO_IP4ADDR_PORT(sin, ipXaddr, port) do { \
-    inet_addr_to_ipaddr(ipX_2_ip(ipXaddr), &((sin)->sin_addr)); \
+#define SOCKADDR4_TO_IP4ADDR_PORT(sin, ipaddr, port) do { \
+    inet_addr_to_ipaddr(ip_2_ip4(ipaddr), &((sin)->sin_addr)); \
     (port) = ntohs((sin)->sin_port); }while(0)
+#endif /* LWIP_IPV4 */
 
 #if LWIP_IPV6
+#define IP6ADDR_PORT_TO_SOCKADDR(sin6, ipaddr, port) do { \
+      (sin6)->sin6_len = sizeof(struct sockaddr_in6); \
+      (sin6)->sin6_family = AF_INET6; \
+      (sin6)->sin6_port = htons((port)); \
+      (sin6)->sin6_flowinfo = 0; \
+      inet6_addr_from_ip6addr(&(sin6)->sin6_addr, ipaddr); }while(0)
+#define SOCKADDR6_TO_IP6ADDR_PORT(sin6, ipaddr, port) do { \
+    inet6_addr_to_ip6addr(ip_2_ip6(ipaddr), &((sin6)->sin6_addr)); \
+    (port) = ntohs((sin6)->sin6_port); }while(0)
+#endif /* LWIP_IPV6 */
+
+#if LWIP_IPV4 && LWIP_IPV6
+static void sockaddr_to_ipaddr_port(const struct sockaddr* sockaddr, ip_addr_t* ipaddr, u16_t* port);
+
 #define IS_SOCK_ADDR_LEN_VALID(namelen)  (((namelen) == sizeof(struct sockaddr_in)) || \
                                          ((namelen) == sizeof(struct sockaddr_in6)))
 #define IS_SOCK_ADDR_TYPE_VALID(name)    (((name)->sa_family == AF_INET) || \
@@ -89,37 +105,32 @@
 #define SOCK_ADDR_TYPE_MATCH(name, sock) \
        ((((name)->sa_family == AF_INET) && !(NETCONNTYPE_ISIPV6((sock)->conn->type))) || \
        (((name)->sa_family == AF_INET6) && (NETCONNTYPE_ISIPV6((sock)->conn->type))))
-#define IP6ADDR_PORT_TO_SOCKADDR(sin6, ipXaddr, port) do { \
-      (sin6)->sin6_len = sizeof(struct sockaddr_in6); \
-      (sin6)->sin6_family = AF_INET6; \
-      (sin6)->sin6_port = htons((port)); \
-      (sin6)->sin6_flowinfo = 0; \
-      inet6_addr_from_ip6addr(&(sin6)->sin6_addr, ipX_2_ip6(ipXaddr)); }while(0)
-#define IPXADDR_PORT_TO_SOCKADDR(isipv6, sockaddr, ipXaddr, port) do { \
-    if (isipv6) { \
-      IP6ADDR_PORT_TO_SOCKADDR((struct sockaddr_in6*)(void*)(sockaddr), ipXaddr, port); \
+#define IPADDR_PORT_TO_SOCKADDR(sockaddr, ipaddr, port) do { \
+    if (IP_IS_V6(ipaddr)) { \
+      IP6ADDR_PORT_TO_SOCKADDR((struct sockaddr_in6*)(void*)(sockaddr), ip_2_ip6(ipaddr), port); \
     } else { \
-      IP4ADDR_PORT_TO_SOCKADDR((struct sockaddr_in*)(void*)(sockaddr), ipXaddr, port); \
+      IP4ADDR_PORT_TO_SOCKADDR((struct sockaddr_in*)(void*)(sockaddr), ip_2_ip4(ipaddr), port); \
     } } while(0)
-#define SOCKADDR6_TO_IP6ADDR_PORT(sin6, ipXaddr, port) do { \
-    inet6_addr_to_ip6addr(ipX_2_ip6(ipXaddr), &((sin6)->sin6_addr)); \
-    (port) = ntohs((sin6)->sin6_port); }while(0)
-#define SOCKADDR_TO_IPXADDR_PORT(isipv6, sockaddr, ipXaddr, port) do { \
-    if (isipv6) { \
-      SOCKADDR6_TO_IP6ADDR_PORT((struct sockaddr_in6*)(void*)(sockaddr), ipXaddr, port); \
-    } else { \
-      SOCKADDR4_TO_IP4ADDR_PORT((struct sockaddr_in*)(void*)(sockaddr), ipXaddr, port); \
-    } } while(0)
+#define SOCKADDR_TO_IPADDR_PORT(sockaddr, ipaddr, port) sockaddr_to_ipaddr_port(sockaddr, ipaddr, &(port))
 #define DOMAIN_TO_NETCONN_TYPE(domain, type) (((domain) == AF_INET) ? \
   (type) : (enum netconn_type)((type) | NETCONN_TYPE_IPV6))
-#else /* LWIP_IPV6 */
+#elif LWIP_IPV6 /* LWIP_IPV4 && LWIP_IPV6 */
+#define IS_SOCK_ADDR_LEN_VALID(namelen)  ((namelen) == sizeof(struct sockaddr_in6))
+#define IS_SOCK_ADDR_TYPE_VALID(name)    ((name)->sa_family == AF_INET6)
+#define SOCK_ADDR_TYPE_MATCH(name, sock) 1
+#define IPADDR_PORT_TO_SOCKADDR(sockaddr, ipaddr, port) \
+        IP6ADDR_PORT_TO_SOCKADDR((struct sockaddr_in6*)(void*)(sockaddr), ip_2_ip6(ipaddr), port)
+#define SOCKADDR_TO_IPADDR_PORT(sockaddr, ipaddr, port) \
+        SOCKADDR6_TO_IP6ADDR_PORT((const struct sockaddr_in6*)(const void*)(sockaddr), ipaddr, port)
+#define DOMAIN_TO_NETCONN_TYPE(domain, netconn_type) (netconn_type)
+#else /*-> LWIP_IPV4: LWIP_IPV4 && LWIP_IPV6 */
 #define IS_SOCK_ADDR_LEN_VALID(namelen)  ((namelen) == sizeof(struct sockaddr_in))
 #define IS_SOCK_ADDR_TYPE_VALID(name)    ((name)->sa_family == AF_INET)
 #define SOCK_ADDR_TYPE_MATCH(name, sock) 1
-#define IPXADDR_PORT_TO_SOCKADDR(isipv6, sockaddr, ipXaddr, port) \
-        IP4ADDR_PORT_TO_SOCKADDR((struct sockaddr_in*)(void*)(sockaddr), ipXaddr, port)
-#define SOCKADDR_TO_IPXADDR_PORT(isipv6, sockaddr, ipXaddr, port) \
-      SOCKADDR4_TO_IP4ADDR_PORT((struct sockaddr_in*)(void*)(sockaddr), ipXaddr, port)
+#define IPADDR_PORT_TO_SOCKADDR(sockaddr, ipaddr, port) \
+        IP4ADDR_PORT_TO_SOCKADDR((struct sockaddr_in*)(void*)(sockaddr), ip_2_ip4(ipaddr), port)
+#define SOCKADDR_TO_IPADDR_PORT(sockaddr, ipaddr, port) \
+        SOCKADDR4_TO_IP4ADDR_PORT((const struct sockaddr_in*)(const void*)(sockaddr), ipaddr, port)
 #define DOMAIN_TO_NETCONN_TYPE(domain, netconn_type) (netconn_type)
 #endif /* LWIP_IPV6 */
 
@@ -249,15 +260,15 @@ struct lwip_socket_multicast_pair {
   /** the socket (+1 to not require initialization) */
   int sa;
   /** the interface address */
-  ip_addr_t if_addr;
+  ip4_addr_t if_addr;
   /** the group address */
-  ip_addr_t multi_addr;
+  ip4_addr_t multi_addr;
 };
 
 struct lwip_socket_multicast_pair socket_ipv4_multicast_memberships[LWIP_SOCKET_MAX_MEMBERSHIPS];
 
-static int  lwip_socket_register_membership(int s, ip_addr_t *if_addr, ip_addr_t *multi_addr);
-static void lwip_socket_unregister_membership(int s, ip_addr_t *if_addr, ip_addr_t *multi_addr);
+static int  lwip_socket_register_membership(int s, const ip4_addr_t *if_addr, const ip4_addr_t *multi_addr);
+static void lwip_socket_unregister_membership(int s, const ip4_addr_t *if_addr, const ip4_addr_t *multi_addr);
 static void lwip_socket_drop_registered_memberships(int s);
 #endif /* LWIP_IGMP */
 
@@ -307,8 +318,9 @@ static const int err_to_errno_table[] = {
 #endif /* LWIP_SOCKET_SET_ERRNO */
 
 #define sock_set_errno(sk, e) do { \
-  sk->err = (e); \
-  set_errno(sk->err); \
+  const int sockerr = (e); \
+  sk->err = (u8_t)sockerr; \
+  set_errno(sockerr); \
 } while (0)
 
 /* Forward declaration of some functions */
@@ -319,6 +331,18 @@ static void lwip_setsockopt_callback(void *arg);
 #endif
 static u8_t lwip_getsockopt_impl(int s, int level, int optname, void *optval, socklen_t *optlen);
 static u8_t lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_t optlen);
+
+#if LWIP_IPV4 && LWIP_IPV6
+static void
+sockaddr_to_ipaddr_port(const struct sockaddr* sockaddr, ip_addr_t* ipaddr, u16_t* port)
+{
+  if ((sockaddr->sa_family) == AF_INET6) {
+    SOCKADDR6_TO_IP6ADDR_PORT((const struct sockaddr_in6*)(const void*)(sockaddr), ipaddr, *port);
+  } else {
+    SOCKADDR4_TO_IP4ADDR_PORT((const struct sockaddr_in*)(const void*)(sockaddr), ipaddr, *port);
+  }
+}
+#endif /* LWIP_IPV4 && LWIP_IPV6 */
 
 /**
  * Map a externally used socket index to the internal socket representation.
@@ -451,7 +475,7 @@ lwip_accept(int s, struct sockaddr *addr, socklen_t *addrlen)
 {
   struct lwip_sock *sock, *nsock;
   struct netconn *newconn;
-  ipX_addr_t naddr;
+  ip_addr_t naddr;
   u16_t port = 0;
   int newsock;
   err_t err;
@@ -484,28 +508,6 @@ lwip_accept(int s, struct sockaddr *addr, socklen_t *addrlen)
   /* Prevent automatic window updates, we do this on our own! */
   netconn_set_noautorecved(newconn, 1);
 
-  /* Note that POSIX only requires us to check addr is non-NULL. addrlen must
-   * not be NULL if addr is valid.
-   */
-  if (addr != NULL) {
-    union sockaddr_aligned tempaddr;
-    /* get the IP address and port of the remote host */
-    err = netconn_peer(newconn, ipX_2_ip(&naddr), &port);
-    if (err != ERR_OK) {
-      LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_accept(%d): netconn_peer failed, err=%d\n", s, err));
-      netconn_delete(newconn);
-      sock_set_errno(sock, err_to_errno(err));
-      return -1;
-    }
-    LWIP_ASSERT("addr valid but addrlen NULL", addrlen != NULL);
-
-    IPXADDR_PORT_TO_SOCKADDR(NETCONNTYPE_ISIPV6(newconn->type), &tempaddr, &naddr, port);
-    if (*addrlen > tempaddr.sa.sa_len) {
-      *addrlen = tempaddr.sa.sa_len;
-    }
-    MEMCPY(addr, &tempaddr, *addrlen);
-  }
-
   newsock = alloc_socket(newconn, 1);
   if (newsock == -1) {
     netconn_delete(newconn);
@@ -526,11 +528,32 @@ lwip_accept(int s, struct sockaddr *addr, socklen_t *addrlen)
   newconn->socket = newsock;
   SYS_ARCH_UNPROTECT(lev);
 
-  LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_accept(%d) returning new sock=%d", s, newsock));
+  /* Note that POSIX only requires us to check addr is non-NULL. addrlen must
+   * not be NULL if addr is valid.
+   */
   if (addr != NULL) {
-    LWIP_DEBUGF(SOCKETS_DEBUG, (" addr="));
-    ipX_addr_debug_print(NETCONNTYPE_ISIPV6(newconn->type), SOCKETS_DEBUG, &naddr);
+    union sockaddr_aligned tempaddr;
+    /* get the IP address and port of the remote host */
+    err = netconn_peer(newconn, &naddr, &port);
+    if (err != ERR_OK) {
+      LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_accept(%d): netconn_peer failed, err=%d\n", s, err));
+      netconn_delete(newconn);
+      sock_set_errno(sock, err_to_errno(err));
+      return -1;
+    }
+    LWIP_ASSERT("addr valid but addrlen NULL", addrlen != NULL);
+
+    IPADDR_PORT_TO_SOCKADDR(&tempaddr, &naddr, port);
+    if (*addrlen > tempaddr.sa.sa_len) {
+      *addrlen = tempaddr.sa.sa_len;
+    }
+    MEMCPY(addr, &tempaddr, *addrlen);
+
+    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_accept(%d) returning new sock=%d addr=", s, newsock));
+    ip_addr_debug_print_val(SOCKETS_DEBUG, naddr);
     LWIP_DEBUGF(SOCKETS_DEBUG, (" port=%"U16_F"\n", port));
+  } else {
+    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_accept(%d) returning new sock=%d", s, newsock));
   }
 
   sock_set_errno(sock, 0);
@@ -541,7 +564,7 @@ int
 lwip_bind(int s, const struct sockaddr *name, socklen_t namelen)
 {
   struct lwip_sock *sock;
-  ipX_addr_t local_addr;
+  ip_addr_t local_addr;
   u16_t local_port;
   err_t err;
 
@@ -562,12 +585,12 @@ lwip_bind(int s, const struct sockaddr *name, socklen_t namelen)
              sock_set_errno(sock, err_to_errno(ERR_ARG)); return -1;);
   LWIP_UNUSED_ARG(namelen);
 
-  SOCKADDR_TO_IPXADDR_PORT((name->sa_family == AF_INET6), name, &local_addr, local_port);
+  SOCKADDR_TO_IPADDR_PORT(name, &local_addr, local_port);
   LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_bind(%d, addr=", s));
-  ipX_addr_debug_print(name->sa_family == AF_INET6, SOCKETS_DEBUG, &local_addr);
+  ip_addr_debug_print_val(SOCKETS_DEBUG, local_addr);
   LWIP_DEBUGF(SOCKETS_DEBUG, (" port=%"U16_F")\n", local_port));
 
-  err = netconn_bind(sock->conn, ipX_2_ip(&local_addr), local_port);
+  err = netconn_bind(sock->conn, &local_addr, local_port);
 
   if (err != ERR_OK) {
     LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_bind(%d) failed, err=%d\n", s, err));
@@ -638,7 +661,7 @@ lwip_connect(int s, const struct sockaddr *name, socklen_t namelen)
     LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_connect(%d, AF_UNSPEC)\n", s));
     err = netconn_disconnect(sock->conn);
   } else {
-    ipX_addr_t remote_addr;
+    ip_addr_t remote_addr;
     u16_t remote_port;
 
     /* check size, family and alignment of 'name' */
@@ -646,12 +669,12 @@ lwip_connect(int s, const struct sockaddr *name, socklen_t namelen)
                IS_SOCK_ADDR_TYPE_VALID_OR_UNSPEC(name) && IS_SOCK_ADDR_ALIGNED(name),
                sock_set_errno(sock, err_to_errno(ERR_ARG)); return -1;);
 
-    SOCKADDR_TO_IPXADDR_PORT((name->sa_family == AF_INET6), name, &remote_addr, remote_port);
+    SOCKADDR_TO_IPADDR_PORT(name, &remote_addr, remote_port);
     LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_connect(%d, addr=", s));
-    ipX_addr_debug_print(name->sa_family == AF_INET6, SOCKETS_DEBUG, &remote_addr);
+    ip_addr_debug_print_val(SOCKETS_DEBUG, remote_addr);
     LWIP_DEBUGF(SOCKETS_DEBUG, (" port=%"U16_F")\n", remote_port));
 
-    err = netconn_connect(sock->conn, ipX_2_ip(&remote_addr), remote_port);
+    err = netconn_connect(sock->conn, &remote_addr, remote_port);
   }
 
   if (err != ERR_OK) {
@@ -823,22 +846,19 @@ lwip_recvfrom(int s, void *mem, size_t len, int flags,
 #endif /* !SOCKETS_DEBUG */
       {
         u16_t port;
-        ipX_addr_t tmpaddr;
-        ipX_addr_t *fromaddr;
+        ip_addr_t tmpaddr;
+        ip_addr_t *fromaddr;
         union sockaddr_aligned saddr;
         LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_recvfrom(%d): addr=", s));
         if (NETCONNTYPE_GROUP(netconn_type(sock->conn)) == NETCONN_TCP) {
           fromaddr = &tmpaddr;
-          /* @todo: this does not work for IPv6, yet */
-          netconn_getaddr(sock->conn, ipX_2_ip(fromaddr), &port, 0);
+          netconn_getaddr(sock->conn, fromaddr, &port, 0);
         } else {
           port = netbuf_fromport((struct netbuf *)buf);
-          fromaddr = netbuf_fromaddr_ipX((struct netbuf *)buf);
+          fromaddr = netbuf_fromaddr((struct netbuf *)buf);
         }
-        IPXADDR_PORT_TO_SOCKADDR(NETCONNTYPE_ISIPV6(netconn_type(sock->conn)),
-          &saddr, fromaddr, port);
-        ipX_addr_debug_print(NETCONNTYPE_ISIPV6(netconn_type(sock->conn)),
-          SOCKETS_DEBUG, fromaddr);
+        IPADDR_PORT_TO_SOCKADDR(&saddr, fromaddr, port);
+        ip_addr_debug_print(SOCKETS_DEBUG, fromaddr);
         LWIP_DEBUGF(SOCKETS_DEBUG, (" port=%"U16_F" len=%d\n", port, off));
 #if SOCKETS_DEBUG
         if (from && fromlen)
@@ -976,18 +996,17 @@ lwip_sendto(int s, const void *data, size_t size, int flags,
   buf.flags = 0;
 #endif /* LWIP_CHECKSUM_ON_COPY */
   if (to) {
-    SOCKADDR_TO_IPXADDR_PORT((to->sa_family) == AF_INET6, to, &buf.addr, remote_port);
+    SOCKADDR_TO_IPADDR_PORT(to, &buf.addr, remote_port);
   } else {
     remote_port = 0;
-    ipX_addr_set_any(NETCONNTYPE_ISIPV6(netconn_type(sock->conn)), &buf.addr);
+    ip_addr_set_any(NETCONNTYPE_ISIPV6(netconn_type(sock->conn)), &buf.addr);
   }
   netbuf_fromport(&buf) = remote_port;
 
 
   LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_sendto(%d, data=%p, short_size=%"U16_F", flags=0x%x to=",
               s, data, short_size, flags));
-  ipX_addr_debug_print(NETCONNTYPE_ISIPV6(netconn_type(sock->conn)),
-    SOCKETS_DEBUG, &buf.addr);
+  ip_addr_debug_print(SOCKETS_DEBUG, &buf.addr);
   LWIP_DEBUGF(SOCKETS_DEBUG, (" port=%"U16_F"\n", remote_port));
 
   /* make the buffer point to the data that should be sent */
@@ -1137,19 +1156,19 @@ lwip_selscan(int maxfdp1, fd_set *readset_in, fd_set *writeset_in, fd_set *excep
     /* ... then examine it: */
     /* See if netconn of this socket is ready for read */
     if (readset_in && FD_ISSET(i, readset_in) && ((lastdata != NULL) || (rcvevent > 0))) {
-      FD_SET(i, &lreadset);
+      FD_SET_VAL(i, lreadset);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_selscan: fd=%d ready for reading\n", i));
       nready++;
     }
     /* See if netconn of this socket is ready for write */
     if (writeset_in && FD_ISSET(i, writeset_in) && (sendevent != 0)) {
-      FD_SET(i, &lwriteset);
+      FD_SET_VAL(i, lwriteset);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_selscan: fd=%d ready for writing\n", i));
       nready++;
     }
     /* See if netconn of this socket had an error */
     if (exceptset_in && FD_ISSET(i, exceptset_in) && (errevent != 0)) {
-      FD_SET(i, &lexceptset);
+      FD_SET_VAL(i, lexceptset);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_selscan: fd=%d ready for exception\n", i));
       nready++;
     }
@@ -1521,7 +1540,7 @@ lwip_getaddrname(int s, struct sockaddr *name, socklen_t *namelen, u8_t local)
 {
   struct lwip_sock *sock;
   union sockaddr_aligned saddr;
-  ipX_addr_t naddr;
+  ip_addr_t naddr;
   u16_t port;
   err_t err;
 
@@ -1532,17 +1551,15 @@ lwip_getaddrname(int s, struct sockaddr *name, socklen_t *namelen, u8_t local)
 
   /* get the IP address and port */
   /* @todo: this does not work for IPv6, yet */
-  err = netconn_getaddr(sock->conn, ipX_2_ip(&naddr), &port, local);
+  err = netconn_getaddr(sock->conn, &naddr, &port, local);
   if (err != ERR_OK) {
     sock_set_errno(sock, err_to_errno(err));
     return -1;
   }
-  IPXADDR_PORT_TO_SOCKADDR(NETCONNTYPE_ISIPV6(netconn_type(sock->conn)),
-    &saddr, &naddr, port);
+  IPADDR_PORT_TO_SOCKADDR(&saddr, &naddr, port);
 
   LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_getaddrname(%d, addr=", s));
-  ipX_addr_debug_print(NETCONNTYPE_ISIPV6(netconn_type(sock->conn)),
-    SOCKETS_DEBUG, &naddr);
+  ip_addr_debug_print_val(SOCKETS_DEBUG, naddr);
   LWIP_DEBUGF(SOCKETS_DEBUG, (" port=%"U16_F")\n", port));
 
   if (*namelen > saddr.sa.sa_len) {
@@ -1606,7 +1623,7 @@ lwip_getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen)
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).optname = optname;
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).optlen = *optlen;
 #if !LWIP_MPU_COMPATIBLE
-  LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).optval = optval;
+  LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).optval.p = optval;
 #endif /* !LWIP_MPU_COMPATIBLE */
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).err = 0;
 #if LWIP_NETCONN_SEM_PER_THREAD
@@ -1644,7 +1661,7 @@ lwip_getsockopt_callback(void *arg)
   LWIP_ASSERT("arg != NULL", arg != NULL);
   data = (struct lwip_setgetsockopt_data*)arg;
 
-  data->err = lwip_getsockopt_impl(data->s, data->level, data->optname, data->optval,
+  data->err = lwip_getsockopt_impl(data->s, data->level, data->optname, data->optval.p,
     &data->optlen);
 
   sys_sem_signal((sys_sem_t*)(data->completed_sem));
@@ -1721,7 +1738,7 @@ lwip_getsockopt_impl(int s, int level, int optname, void *optval, socklen_t *opt
       if (((sock->err == 0) || (sock->err == EINPROGRESS)) && (sock->conn != NULL)) {
         sock_set_errno(sock, err_to_errno(sock->conn->last_err));
       }
-      *(int *)optval = sock->err;
+      *(int *)optval = (sock->err == 0xFF ? (int)-1 : (int)sock->err);
       sock->err = 0;
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_getsockopt(%d, SOL_SOCKET, SO_ERROR) = %d\n",
                   s, *(int *)optval));
@@ -1932,7 +1949,7 @@ lwip_getsockopt_impl(int s, int level, int optname, void *optval, socklen_t *opt
   /* Level: IPPROTO_RAW */
   case IPPROTO_RAW:
     switch (optname) {
-#if LWIP_IPV6
+#if LWIP_IPV6 && LWIP_RAW
     case IPV6_CHECKSUM:
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB_TYPE(sock, *optlen, int, NETCONN_RAW);
       if (sock->conn->pcb.raw->chksum_reqd == 0) {
@@ -1943,7 +1960,7 @@ lwip_getsockopt_impl(int s, int level, int optname, void *optval, socklen_t *opt
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_getsockopt(%d, IPPROTO_RAW, IPV6_CHECKSUM) = %d\n",
                   s, (*(int*)optval)) );
       break;
-#endif /* LWIP_IPV6 */
+#endif /* LWIP_IPV6 && LWIP_RAW */
     default:
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_getsockopt(%d, IPPROTO_RAW, UNIMPL: optname=0x%x, ..)\n",
                   s, optname));
@@ -2003,7 +2020,7 @@ lwip_setsockopt(int s, int level, int optname, const void *optval, socklen_t opt
 #if LWIP_MPU_COMPATIBLE
   memcpy(LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).optval, optval, optlen);
 #else /* LWIP_MPU_COMPATIBLE */
-  LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).optval = (void*)optval;
+  LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).optval.pc = (const void*)optval;
 #endif /* LWIP_MPU_COMPATIBLE */
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).err = 0;
 #if LWIP_NETCONN_SEM_PER_THREAD
@@ -2034,7 +2051,7 @@ lwip_setsockopt_callback(void *arg)
   LWIP_ASSERT("arg != NULL", arg != NULL);
   data = (struct lwip_setgetsockopt_data*)arg;
 
-  data->err = lwip_setsockopt_impl(data->s, data->level, data->optname, data->optval,
+  data->err = lwip_setsockopt_impl(data->s, data->level, data->optname, data->optval.pc,
     data->optlen);
 
   sys_sem_signal((sys_sem_t*)(data->completed_sem));
@@ -2068,13 +2085,13 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
     case SO_REUSEADDR:
 #endif /* SO_REUSE */
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB(sock, optlen, int);
-      if (*(int*)optval) {
+      if (*(const int*)optval) {
         ip_set_option(sock->conn->pcb.ip, optname);
       } else {
         ip_reset_option(sock->conn->pcb.ip, optname);
       }
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, SOL_SOCKET, optname=0x%x, ..) -> %s\n",
-                  s, optname, (*(int*)optval?"on":"off")));
+                  s, optname, (*(const int*)optval?"on":"off")));
       break;
 
     /* SO_TYPE is get-only */
@@ -2095,13 +2112,13 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
 #if LWIP_SO_RCVBUF
     case SO_RCVBUF:
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN(sock, optlen, int);
-      netconn_set_recvbufsize(sock->conn, *(int*)optval);
+      netconn_set_recvbufsize(sock->conn, *(const int*)optval);
       break;
 #endif /* LWIP_SO_RCVBUF */
 #if LWIP_SO_LINGER
     case SO_LINGER:
       {
-        struct linger* linger = (struct linger*)optval;
+        const struct linger* linger = (const struct linger*)optval;
         LWIP_SOCKOPT_CHECK_OPTLEN_CONN(sock, optlen, struct linger);
         if (linger->l_onoff) {
           int lingersec = linger->l_linger;
@@ -2127,7 +2144,7 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
         return EAFNOSUPPORT;
       }
 #endif /* LWIP_UDPLITE */
-      if (*(int*)optval) {
+      if (*(const int*)optval) {
         udp_setflags(sock->conn->pcb.udp, udp_flags(sock->conn->pcb.udp) | UDP_FLAGS_NOCHKSUM);
       } else {
         udp_setflags(sock->conn->pcb.udp, udp_flags(sock->conn->pcb.udp) & ~UDP_FLAGS_NOCHKSUM);
@@ -2147,32 +2164,32 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
     switch (optname) {
     case IP_TTL:
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB(sock, optlen, int);
-      sock->conn->pcb.ip->ttl = (u8_t)(*(int*)optval);
+      sock->conn->pcb.ip->ttl = (u8_t)(*(const int*)optval);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_IP, IP_TTL, ..) -> %d\n",
                   s, sock->conn->pcb.ip->ttl));
       break;
     case IP_TOS:
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB(sock, optlen, int);
-      sock->conn->pcb.ip->tos = (u8_t)(*(int*)optval);
+      sock->conn->pcb.ip->tos = (u8_t)(*(const int*)optval);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_IP, IP_TOS, ..)-> %d\n",
                   s, sock->conn->pcb.ip->tos));
       break;
 #if LWIP_IGMP
     case IP_MULTICAST_TTL:
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB_TYPE(sock, optlen, u8_t, NETCONN_UDP);
-      sock->conn->pcb.udp->mcast_ttl = (u8_t)(*(u8_t*)optval);
+      sock->conn->pcb.udp->mcast_ttl = (u8_t)(*(const u8_t*)optval);
       break;
     case IP_MULTICAST_IF:
       {
-        ip_addr_t if_addr;
+        ip4_addr_t if_addr;
         LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB_TYPE(sock, optlen, struct in_addr, NETCONN_UDP);
-        inet_addr_to_ipaddr(&if_addr, (struct in_addr*)optval);
+        inet_addr_to_ipaddr(&if_addr, (const struct in_addr*)optval);
         udp_set_multicast_netif_addr(sock->conn->pcb.udp, &if_addr);
       }
       break;
     case IP_MULTICAST_LOOP:
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB_TYPE(sock, optlen, u8_t, NETCONN_UDP);
-      if (*(u8_t*)optval) {
+      if (*(const u8_t*)optval) {
         udp_setflags(sock->conn->pcb.udp, udp_flags(sock->conn->pcb.udp) | UDP_FLAGS_MULTICAST_LOOP);
       } else {
         udp_setflags(sock->conn->pcb.udp, udp_flags(sock->conn->pcb.udp) & ~UDP_FLAGS_MULTICAST_LOOP);
@@ -2184,9 +2201,9 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
         /* If this is a TCP or a RAW socket, ignore these options. */
         /* @todo: assign membership to this socket so that it is dropped when closing the socket */
         err_t igmp_err;
-        struct ip_mreq *imr = (struct ip_mreq *)optval;
-        ip_addr_t if_addr;
-        ip_addr_t multi_addr;
+        const struct ip_mreq *imr = (const struct ip_mreq *)optval;
+        ip4_addr_t if_addr;
+        ip4_addr_t multi_addr;
         LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB_TYPE(sock, optlen, struct ip_mreq, NETCONN_UDP);
         inet_addr_to_ipaddr(&if_addr, &imr->imr_interface);
         inet_addr_to_ipaddr(&multi_addr, &imr->imr_multiaddr);
@@ -2223,33 +2240,33 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
     LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB_TYPE(sock, optlen, int, NETCONN_TCP);
     switch (optname) {
     case TCP_NODELAY:
-      if (*(int*)optval) {
+      if (*(const int*)optval) {
         tcp_nagle_disable(sock->conn->pcb.tcp);
       } else {
         tcp_nagle_enable(sock->conn->pcb.tcp);
       }
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_TCP, TCP_NODELAY) -> %s\n",
-                  s, (*(int *)optval)?"on":"off") );
+                  s, (*(const int *)optval)?"on":"off") );
       break;
     case TCP_KEEPALIVE:
-      sock->conn->pcb.tcp->keep_idle = (u32_t)(*(int*)optval);
+      sock->conn->pcb.tcp->keep_idle = (u32_t)(*(const int*)optval);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_TCP, TCP_KEEPALIVE) -> %"U32_F"\n",
                   s, sock->conn->pcb.tcp->keep_idle));
       break;
 
 #if LWIP_TCP_KEEPALIVE
     case TCP_KEEPIDLE:
-      sock->conn->pcb.tcp->keep_idle = 1000*(u32_t)(*(int*)optval);
+      sock->conn->pcb.tcp->keep_idle = 1000*(u32_t)(*(const int*)optval);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_TCP, TCP_KEEPIDLE) -> %"U32_F"\n",
                   s, sock->conn->pcb.tcp->keep_idle));
       break;
     case TCP_KEEPINTVL:
-      sock->conn->pcb.tcp->keep_intvl = 1000*(u32_t)(*(int*)optval);
+      sock->conn->pcb.tcp->keep_intvl = 1000*(u32_t)(*(const int*)optval);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_TCP, TCP_KEEPINTVL) -> %"U32_F"\n",
                   s, sock->conn->pcb.tcp->keep_intvl));
       break;
     case TCP_KEEPCNT:
-      sock->conn->pcb.tcp->keep_cnt = (u32_t)(*(int*)optval);
+      sock->conn->pcb.tcp->keep_cnt = (u32_t)(*(const int*)optval);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_TCP, TCP_KEEPCNT) -> %"U32_F"\n",
                   s, sock->conn->pcb.tcp->keep_cnt));
       break;
@@ -2270,7 +2287,7 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
     case IPV6_V6ONLY:
       /* @todo: this does not work for datagram sockets, yet */
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB_TYPE(sock, optlen, int, NETCONN_TCP);
-      if (*(int*)optval) {
+      if (*(const int*)optval) {
         sock->conn->flags |= NETCONN_FLAG_IPV6_V6ONLY;
       } else {
         sock->conn->flags &= ~NETCONN_FLAG_IPV6_V6ONLY;
@@ -2298,24 +2315,24 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
     }
     switch (optname) {
     case UDPLITE_SEND_CSCOV:
-      if ((*(int*)optval != 0) && ((*(int*)optval < 8) || (*(int*)optval > 0xffff))) {
+      if ((*(const int*)optval != 0) && ((*(const int*)optval < 8) || (*(const int*)optval > 0xffff))) {
         /* don't allow illegal values! */
         sock->conn->pcb.udp->chksum_len_tx = 8;
       } else {
-        sock->conn->pcb.udp->chksum_len_tx = (u16_t)*(int*)optval;
+        sock->conn->pcb.udp->chksum_len_tx = (u16_t)*(const int*)optval;
       }
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_UDPLITE, UDPLITE_SEND_CSCOV) -> %d\n",
-                  s, (*(int*)optval)) );
+                  s, (*(const int*)optval)) );
       break;
     case UDPLITE_RECV_CSCOV:
-      if ((*(int*)optval != 0) && ((*(int*)optval < 8) || (*(int*)optval > 0xffff))) {
+      if ((*(const int*)optval != 0) && ((*(const int*)optval < 8) || (*(const int*)optval > 0xffff))) {
         /* don't allow illegal values! */
         sock->conn->pcb.udp->chksum_len_rx = 8;
       } else {
-        sock->conn->pcb.udp->chksum_len_rx = (u16_t)*(int*)optval;
+        sock->conn->pcb.udp->chksum_len_rx = (u16_t)*(const int*)optval;
       }
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_UDPLITE, UDPLITE_RECV_CSCOV) -> %d\n",
-                  s, (*(int*)optval)) );
+                  s, (*(const int*)optval)) );
       break;
     default:
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_UDPLITE, UNIMPL: optname=0x%x, ..)\n",
@@ -2328,22 +2345,22 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
   /* Level: IPPROTO_RAW */
   case IPPROTO_RAW:
     switch (optname) {
-#if LWIP_IPV6
+#if LWIP_IPV6 && LWIP_RAW
     case IPV6_CHECKSUM:
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB_TYPE(sock, optlen, int, NETCONN_RAW);
-      if (*(int *)optval < 0) {
+      if (*(const int *)optval < 0) {
         sock->conn->pcb.raw->chksum_reqd = 0;
-      } else if (*(int *)optval & 1) {
+      } else if (*(const int *)optval & 1) {
         /* Per RFC3542, odd offsets are not allowed */
         return EINVAL;
       } else {
         sock->conn->pcb.raw->chksum_reqd = 1;
-        sock->conn->pcb.raw->chksum_offset = *(int *)optval;
+        sock->conn->pcb.raw->chksum_offset = (u16_t)*(const int *)optval;
       }
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_RAW, IPV6_CHECKSUM, ..) -> %d\n",
                   s, sock->conn->pcb.raw->chksum_reqd));
       break;
-#endif /* LWIP_IPV6 */
+#endif /* LWIP_IPV6 && LWIP_RAW */
     default:
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_RAW, UNIMPL: optname=0x%x, ..)\n",
                                   s, optname));
@@ -2497,7 +2514,7 @@ lwip_fcntl(int s, int cmd, int val)
  * @return 1 on success, 0 on failure
  */
 static int
-lwip_socket_register_membership(int s, ip_addr_t *if_addr, ip_addr_t *multi_addr)
+lwip_socket_register_membership(int s, const ip4_addr_t *if_addr, const ip4_addr_t *multi_addr)
 {
   /* s+1 is stored in the array to prevent having to initialize the array
      (default initialization is to 0) */
@@ -2507,8 +2524,8 @@ lwip_socket_register_membership(int s, ip_addr_t *if_addr, ip_addr_t *multi_addr
   for (i = 0; i < LWIP_SOCKET_MAX_MEMBERSHIPS; i++) {
     if (socket_ipv4_multicast_memberships[i].sa == 0) {
       socket_ipv4_multicast_memberships[i].sa = sa;
-      ip_addr_copy(socket_ipv4_multicast_memberships[i].if_addr, *if_addr);
-      ip_addr_copy(socket_ipv4_multicast_memberships[i].multi_addr, *multi_addr);
+      ip4_addr_copy(socket_ipv4_multicast_memberships[i].if_addr, *if_addr);
+      ip4_addr_copy(socket_ipv4_multicast_memberships[i].multi_addr, *multi_addr);
       return 1;
     }
   }
@@ -2521,7 +2538,7 @@ lwip_socket_register_membership(int s, ip_addr_t *if_addr, ip_addr_t *multi_addr
  * ATTENTION: this function is called from tcpip_thread (or under CORE_LOCK).
  */
 static void
-lwip_socket_unregister_membership(int s, ip_addr_t *if_addr, ip_addr_t *multi_addr)
+lwip_socket_unregister_membership(int s, const ip4_addr_t *if_addr, const ip4_addr_t *multi_addr)
 {
   /* s+1 is stored in the array to prevent having to initialize the array
      (default initialization is to 0) */
@@ -2530,11 +2547,11 @@ lwip_socket_unregister_membership(int s, ip_addr_t *if_addr, ip_addr_t *multi_ad
 
   for (i = 0; i < LWIP_SOCKET_MAX_MEMBERSHIPS; i++) {
     if ((socket_ipv4_multicast_memberships[i].sa == sa) &&
-        ip_addr_cmp(&socket_ipv4_multicast_memberships[i].if_addr, if_addr) &&
-        ip_addr_cmp(&socket_ipv4_multicast_memberships[i].multi_addr, multi_addr)) {
+        ip4_addr_cmp(&socket_ipv4_multicast_memberships[i].if_addr, if_addr) &&
+        ip4_addr_cmp(&socket_ipv4_multicast_memberships[i].multi_addr, multi_addr)) {
       socket_ipv4_multicast_memberships[i].sa = 0;
-      ip_addr_set_zero(&socket_ipv4_multicast_memberships[i].if_addr);
-      ip_addr_set_zero(&socket_ipv4_multicast_memberships[i].multi_addr);
+      ip4_addr_set_zero(&socket_ipv4_multicast_memberships[i].if_addr);
+      ip4_addr_set_zero(&socket_ipv4_multicast_memberships[i].multi_addr);
       return;
     }
   }
@@ -2555,11 +2572,14 @@ static void lwip_socket_drop_registered_memberships(int s)
 
   for (i = 0; i < LWIP_SOCKET_MAX_MEMBERSHIPS; i++) {
     if (socket_ipv4_multicast_memberships[i].sa == sa) {
-      netconn_join_leave_group(sockets[s].conn, &socket_ipv4_multicast_memberships[i].if_addr,
-        &socket_ipv4_multicast_memberships[i].multi_addr, NETCONN_LEAVE);
+      ip_addr_t multi_addr, if_addr;
+      ip_addr_copy_from_ip4(multi_addr, socket_ipv4_multicast_memberships[i].multi_addr);
+      ip_addr_copy_from_ip4(if_addr, socket_ipv4_multicast_memberships[i].if_addr);
       socket_ipv4_multicast_memberships[i].sa = 0;
-      ip_addr_set_zero(&socket_ipv4_multicast_memberships[i].if_addr);
-      ip_addr_set_zero(&socket_ipv4_multicast_memberships[i].multi_addr);
+      ip4_addr_set_zero(&socket_ipv4_multicast_memberships[i].if_addr);
+      ip4_addr_set_zero(&socket_ipv4_multicast_memberships[i].multi_addr);
+
+      netconn_join_leave_group(sockets[s].conn, &multi_addr, &if_addr, NETCONN_LEAVE);
     }
   }
 }

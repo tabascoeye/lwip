@@ -909,9 +909,9 @@ void start_networks(ppp_pcb *pcb) {
 #if ECP_SUPPORT
     int ecp_required;
 #endif /* ECP_SUPPORT */
-#ifdef MPPE
+#if MPPE_SUPPORT
     int mppe_required;
-#endif /* MPPE */
+#endif /* MPPE_SUPPORT */
 
     new_phase(pcb, PPP_PHASE_NETWORK);
 
@@ -953,17 +953,17 @@ void start_networks(ppp_pcb *pcb) {
 #if ECP_SUPPORT
     ecp_required = ecp_gotoptions[unit].required;
 #endif /* ECP_SUPPORT */
-#ifdef MPPE
-    mppe_required = ccp_gotoptions[unit].mppe;
-#endif /* MPPE */
+#if MPPE_SUPPORT
+    mppe_required = pcb->ccp_gotoptions.mppe;
+#endif /* MPPE_SUPPORT */
 
     if (1
 #if ECP_SUPPORT
         && !ecp_required
 #endif /* ECP_SUPPORT */
-#ifdef MPPE
+#if MPPE_SUPPORT
         && !mppe_required
-#endif /* MPPE */
+#endif /* MPPE_SUPPORT */
         )
 	continue_networks(pcb);
 }
@@ -1045,6 +1045,10 @@ void auth_peer_fail(ppp_pcb *pcb, int protocol) {
  */
 void auth_peer_success(ppp_pcb *pcb, int protocol, int prot_flavor, const char *name, int namelen) {
     int bit;
+#ifndef HAVE_MULTILINK
+    LWIP_UNUSED_ARG(name);
+    LWIP_UNUSED_ARG(namelen);
+#endif /* HAVE_MULTILINK */
 
     switch (protocol) {
 #if CHAP_SUPPORT
@@ -1082,14 +1086,15 @@ void auth_peer_success(ppp_pcb *pcb, int protocol, int prot_flavor, const char *
 	return;
     }
 
+#ifdef HAVE_MULTILINK
     /*
      * Save the authenticated name of the peer for later.
      */
-    /* FIXME: do we need that ? */
     if (namelen > (int)sizeof(pcb->peer_authname) - 1)
 	namelen = (int)sizeof(pcb->peer_authname) - 1;
     MEMCPY(pcb->peer_authname, name, namelen);
     pcb->peer_authname[namelen] = 0;
+#endif /* HAVE_MULTILINK */
 #if 0 /* UNUSED */
     script_setenv("PEERNAME", , 0);
 #endif /* UNUSED */

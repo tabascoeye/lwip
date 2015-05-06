@@ -162,14 +162,14 @@ PACK_STRUCT_END
 
 
 #define ip6_init() /* TODO should we init current addresses and header pointer? */
-struct netif *ip6_route(const struct ip6_addr *src, const struct ip6_addr *dest);
+struct netif *ip6_route(const ip6_addr_t *src, const ip6_addr_t *dest);
 ip6_addr_t   *ip6_select_source_address(struct netif *netif, const ip6_addr_t * dest);
 err_t         ip6_input(struct pbuf *p, struct netif *inp);
-err_t         ip6_output(struct pbuf *p, struct ip6_addr *src, struct ip6_addr *dest,
+err_t         ip6_output(struct pbuf *p, const ip6_addr_t *src, const ip6_addr_t *dest,
                          u8_t hl, u8_t tc, u8_t nexth);
-err_t         ip6_output_if(struct pbuf *p, const struct ip6_addr *src, const struct ip6_addr *dest,
+err_t         ip6_output_if(struct pbuf *p, const ip6_addr_t *src, const ip6_addr_t *dest,
                             u8_t hl, u8_t tc, u8_t nexth, struct netif *netif);
-err_t         ip6_output_if_src(struct pbuf *p, const struct ip6_addr *src, const struct ip6_addr *dest,
+err_t         ip6_output_if_src(struct pbuf *p, const ip6_addr_t *src, const ip6_addr_t *dest,
                             u8_t hl, u8_t tc, u8_t nexth, struct netif *netif);
 #if LWIP_NETIF_HWADDRHINT
 err_t         ip6_output_hinted(struct pbuf *p, const ip6_addr_t *src, const ip6_addr_t *dest,
@@ -179,8 +179,8 @@ err_t         ip6_output_hinted(struct pbuf *p, const ip6_addr_t *src, const ip6
 err_t         ip6_options_add_hbh_ra(struct pbuf * p, u8_t nexth, u8_t value);
 #endif /* LWIP_IPV6_MLD */
 
-#define ip6_netif_get_local_ipX(netif, dest) (((netif) != NULL) ? \
-  ip6_2_ipX(ip6_select_source_address(netif, dest)) : NULL)
+#define ip6_netif_get_local_ip(netif, dest) (((netif) != NULL) ? \
+  ip6_select_source_address(netif, dest) : NULL)
 
 #if IP6_DEBUG
 void ip6_debug_print(struct pbuf *p);

@@ -84,7 +84,7 @@ struct nd6_neighbor_cache_entry {
 struct nd6_destination_cache_entry {
   ip6_addr_t destination_addr;
   ip6_addr_t next_hop_addr;
-  u32_t pmtu;
+  u16_t pmtu;
   u32_t age;
 };
 
@@ -185,7 +185,7 @@ PACK_STRUCT_END
 
 /** Router advertisement message header. */
 #define ND6_RA_FLAG_MANAGED_ADDR_CONFIG (0x80)
-#define ND6_RA_FLAG_OTHER_STATEFUL_CONFIG (0x40)
+#define ND6_RA_FLAG_OTHER_CONFIG (0x40)
 #define ND6_RA_FLAG_HOME_AGENT (0x20)
 #define ND6_RA_PREFERENCE_MASK (0x18)
 #define ND6_RA_PREFERENCE_HIGH (0x08)

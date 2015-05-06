@@ -113,7 +113,11 @@ static u16_t dns_txid;
 
 /** DNS server IP address */
 #ifndef DNS_SERVER_ADDRESS
-#define DNS_SERVER_ADDRESS(ipaddr)        (ip4_addr_set_u32(ipaddr, ipaddr_addr("208.67.222.222"))) /* resolver1.opendns.com */
+#if LWIP_IPV4
+#define DNS_SERVER_ADDRESS(ipaddr)        ip_addr_set_ip4_u32(ipaddr, ipaddr_addr("208.67.222.222")) /* resolver1.opendns.com */
+#else
+#define DNS_SERVER_ADDRESS(ipaddr)        ipaddr_aton("2001:4860:4860::8888", ipaddr)
+#endif
 #endif
 
 /** DNS server port address */
@@ -272,7 +276,7 @@ DNS_LOCAL_HOSTLIST_STORAGE_PRE struct local_hostlist_entry local_hostlist_static
 
 #endif /* DNS_LOCAL_HOSTLIST_IS_DYNAMIC */
 
-static void dns_init_local();
+static void dns_init_local(void);
 #endif /* DNS_LOCAL_HOSTLIST */
 
 
@@ -333,7 +337,7 @@ dns_stricmp(const char* str1, const char* str2)
  * (DNS_SERVER_ADDRESS).
  */
 void
-dns_init()
+dns_init(void)
 {
   ip_addr_t dnsserver;
 
@@ -418,7 +422,7 @@ dns_tmr(void)
 
 #if DNS_LOCAL_HOSTLIST
 static void
-dns_init_local()
+dns_init_local(void)
 {
 #if DNS_LOCAL_HOSTLIST_IS_DYNAMIC && defined(DNS_LOCAL_HOSTLIST_INIT)
   int i;
@@ -449,17 +453,21 @@ dns_init_local()
  * Scans the local host-list for a hostname.
  *
  * @param hostname Hostname to look for in the local host-list
- * @return The first IP address for the hostname in the local host-list or
+ * @param addr the first IP address for the hostname in the local host-list or
  *         IPADDR_NONE if not found.
+ * @return ERR_OK if found, ERR_ARG if not found
  */
-static u32_t
-dns_lookup_local(const char *hostname)
+static err_t
+dns_lookup_local(const char *hostname, ip_addr_t *addr)
 {
 #if DNS_LOCAL_HOSTLIST_IS_DYNAMIC
   struct local_hostlist_entry *entry = local_hostlist_dynamic;
   while(entry != NULL) {
     if (LWIP_DNS_STRICMP(entry->name, hostname) == 0) {
-      return ip4_addr_get_u32(&entry->addr);
+      if (addr) {
+        ip_addr_copy(*addr, entry->addr);
+      }
+      return ERR_OK;
     }
     entry = entry->next;
   }
@@ -467,11 +475,14 @@ dns_lookup_local(const char *hostname)
   int i;
   for (i = 0; i < sizeof(local_hostlist_static) / sizeof(struct local_hostlist_entry); i++) {
     if (LWIP_DNS_STRICMP(local_hostlist_static[i].name, hostname) == 0) {
-      return ip4_addr_get_u32(&local_hostlist_static[i].addr);
+      if (addr) {
+        ip_addr_copy(*addr, local_hostlist_static[i].addr);
+      }
+      return ERR_OK;
     }
   }
 #endif /* DNS_LOCAL_HOSTLIST_IS_DYNAMIC */
-  return IPADDR_NONE;
+  return ERR_ARG;
 }
 
 #if DNS_LOCAL_HOSTLIST_IS_DYNAMIC
@@ -550,20 +561,20 @@ dns_local_addhost(const char *hostname, const ip_addr_t *addr)
  * for a hostname.
  *
  * @param name the hostname to look up
- * @return the hostname's IP address, as u32_t (instead of ip_addr_t to
+ * @param addr the hostname's IP address, as u32_t (instead of ip_addr_t to
  *         better check for failure: != IPADDR_NONE) or IPADDR_NONE if the hostname
  *         was not found in the cached dns_table.
+ * @return ERR_OK if found, ERR_ARG if not found
  */
-static u32_t
-dns_lookup(const char *name)
+static err_t
+dns_lookup(const char *name, ip_addr_t *addr)
 {
   u8_t i;
 #if DNS_LOCAL_HOSTLIST || defined(DNS_LOOKUP_LOCAL_EXTERN)
-  u32_t addr;
 #endif /* DNS_LOCAL_HOSTLIST || defined(DNS_LOOKUP_LOCAL_EXTERN) */
 #if DNS_LOCAL_HOSTLIST
-  if ((addr = dns_lookup_local(name)) != IPADDR_NONE) {
-    return addr;
+  if (dns_lookup_local(name, addr) == ERR_OK) {
+    return ERR_OK;
   }
 #endif /* DNS_LOCAL_HOSTLIST */
 #ifdef DNS_LOOKUP_LOCAL_EXTERN
@@ -579,11 +590,14 @@ dns_lookup(const char *name)
       LWIP_DEBUGF(DNS_DEBUG, ("dns_lookup: \"%s\": found = ", name));
       ip_addr_debug_print(DNS_DEBUG, &(dns_table[i].ipaddr));
       LWIP_DEBUGF(DNS_DEBUG, ("\n"));
-      return ip4_addr_get_u32(&dns_table[i].ipaddr);
+      if (addr) {
+        ip_addr_copy(*addr, dns_table[i].ipaddr);
+      }
+      return ERR_OK;
     }
   }
 
-  return IPADDR_NONE;
+  return ERR_ARG;
 }
 
 /**
@@ -680,8 +694,8 @@ dns_send(struct dns_table_entry* entry)
   LWIP_ASSERT("dns server has no IP address set", !ip_addr_isany(&dns_servers[entry->server_idx]));
 
   /* if here, we have either a new query or a retry on a previous query to process */
-  p = pbuf_alloc(PBUF_TRANSPORT, SIZEOF_DNS_HDR + strlen(entry->name) + 2 +
-                 SIZEOF_DNS_QUERY, PBUF_RAM);
+  p = pbuf_alloc(PBUF_TRANSPORT, (u16_t)(SIZEOF_DNS_HDR + strlen(entry->name) + 2 +
+                 SIZEOF_DNS_QUERY), PBUF_RAM);
   if (p != NULL) {
     /* fill dns header */
     memset(&hdr, 0, SIZEOF_DNS_HDR);
@@ -700,7 +714,7 @@ dns_send(struct dns_table_entry* entry)
       for(n = 0; *hostname != '.' && *hostname != 0; ++hostname) {
         ++n;
       }
-      copy_len = hostname - hostname_part;
+      copy_len = (u16_t)(hostname - hostname_part);
       pbuf_put_at(p, query_idx, n);
       pbuf_take_at(p, hostname_part, copy_len, query_idx + 1);
       query_idx += n + 1;
@@ -745,7 +759,7 @@ dns_alloc_random_port(void)
     return NULL;
   }
   do {
-    u16_t port = DNS_RAND_TXID();
+    u16_t port = (u16_t)DNS_RAND_TXID();
     if (!DNS_PORT_ALLOWED(port)) {
       /* this port is not allowed, try again */
       err = ERR_USE;
@@ -861,7 +875,7 @@ dns_create_txid(void)
   u8_t i;
 
 again:
-  txid = DNS_RAND_TXID();
+  txid = (u16_t)DNS_RAND_TXID();
 
   /* check whether the ID is unique */
   for (i = 0; i < DNS_TABLE_SIZE; i++) {
@@ -1058,8 +1072,9 @@ dns_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, 
 
           /* Check for IP address type and Internet class. Others are discarded. */
           pbuf_copy_partial(p, &ans, SIZEOF_DNS_ANSWER, res_idx);
+#if LWIP_IPV4
           if((ans.type == PP_HTONS(DNS_RRTYPE_A)) && (ans.cls == PP_HTONS(DNS_RRCLASS_IN)) &&
-             (ans.len == PP_HTONS(sizeof(ip_addr_t))) ) {
+             (ans.len == PP_HTONS(sizeof(ip4_addr_t))) ) {
             res_idx += SIZEOF_DNS_ANSWER;
             /* read the answer resource record's TTL, and maximize it if needed */
             entry->ttl = ntohl(ans.ttl);
@@ -1069,7 +1084,7 @@ dns_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, 
             /* read the IP address after answer resource record's header */
             pbuf_copy_partial(p, &(entry->ipaddr), sizeof(entry->ipaddr), res_idx);
             LWIP_DEBUGF(DNS_DEBUG, ("dns_recv: \"%s\": response = ", entry->name));
-            ip_addr_debug_print(DNS_DEBUG, (&(entry->ipaddr)));
+            ip4_addr_debug_print(DNS_DEBUG, (&(entry->ipaddr)));
             LWIP_DEBUGF(DNS_DEBUG, ("\n"));
             /* call specified callback function if provided */
             dns_call_found(entry_idx, &entry->ipaddr);
@@ -1082,7 +1097,10 @@ dns_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, 
             }
             /* deallocate memory and return */
             goto memerr;
-          } else {
+          } else
+#endif /* LWIP_IPV4 */
+          {
+            /* @todo: parse IPv6 answers */
             res_idx += SIZEOF_DNS_ANSWER + htons(ans.len);
           }
           --nanswers;
@@ -1100,7 +1118,9 @@ dns_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, 
 responseerr:
   /* ERROR: call specified callback function with NULL as name to indicate an error */
   dns_call_found(entry_idx, NULL);
+#if LWIP_IPV4
 flushentry:
+#endif /* LWIP_IPV4 */
   /* flush this entry */
   dns_table[entry_idx].state = DNS_STATE_UNUSED;
 
@@ -1257,7 +1277,6 @@ err_t
 dns_gethostbyname(const char *hostname, ip_addr_t *addr, dns_found_callback found,
                   void *callback_arg)
 {
-  u32_t ipaddr;
   size_t hostnamelen;
   /* not initialized or no valid server yet, or invalid addr pointer
    * or invalid hostname or invalid hostname length */
@@ -1279,19 +1298,18 @@ dns_gethostbyname(const char *hostname, ip_addr_t *addr, dns_found_callback foun
 
 #if LWIP_HAVE_LOOPIF
   if (strcmp(hostname, "localhost") == 0) {
-    ip_addr_set_loopback(addr);
+    /* @todo: IPv6 support... */
+    ip_addr_set_loopback(0, addr);
     return ERR_OK;
   }
 #endif /* LWIP_HAVE_LOOPIF */
 
   /* host name already in octet notation? set ip addr and return ERR_OK */
-  ipaddr = ipaddr_addr(hostname);
-  if (ipaddr == IPADDR_NONE) {
-    /* already have this address cached? */
-    ipaddr = dns_lookup(hostname);
+  if (ipaddr_aton(hostname, addr)) {
+    return ERR_OK;
   }
-  if (ipaddr != IPADDR_NONE) {
-    ip4_addr_set_u32(addr, ipaddr);
+  /* already have this address cached? */
+  if(dns_lookup(hostname, addr) == ERR_OK) {
     return ERR_OK;
   }
 

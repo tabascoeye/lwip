@@ -72,17 +72,8 @@ PACK_STRUCT_END
 #  include "arch/epstruct.h"
 #endif
 
-/** ip6_addr_t uses a struct for convenience only, so that the same defines can
- * operate both on ip6_addr_t as well as on ip6_addr_p_t. */
 typedef struct ip6_addr ip6_addr_t;
 typedef struct ip6_addr_packed ip6_addr_p_t;
-
-
-/** IP6_ADDR_ANY can be used as a fixed IPv6 address
- *  for the wildcard
- */
-extern const ip6_addr_t ip6_addr_any;
-#define IP6_ADDR_ANY         ((ip6_addr_t *)&ip6_addr_any)
 
 
 #if BYTE_ORDER == BIG_ENDIAN
@@ -161,11 +152,11 @@ Little-endian version, stored in network order (no htonl). */
 
 #define ip6_get_subnet_id(ip6addr)   (htonl((ip6addr)->addr[2]) & 0x0000ffffUL)
 
-#define ip6_addr_isany(ip6addr) (((ip6addr) == NULL) || \
-                             (((ip6addr)->addr[0] == 0) && \
-                             ((ip6addr)->addr[1] == 0) && \
-                             ((ip6addr)->addr[2] == 0) && \
-                             ((ip6addr)->addr[3] == 0)))
+#define ip6_addr_isany_val(ip6addr) (((ip6addr).addr[0] == 0) && \
+                                     ((ip6addr).addr[1] == 0) && \
+                                     ((ip6addr).addr[2] == 0) && \
+                                     ((ip6addr).addr[3] == 0))
+#define ip6_addr_isany(ip6addr) (((ip6addr) == NULL) || ip6_addr_isany_val(*(ip6addr)))
 
 #define ip6_addr_isloopback(ip6addr) (((ip6addr)->addr[0] == 0UL) && \
                                       ((ip6addr)->addr[1] == 0UL) && \
@@ -195,12 +186,12 @@ Little-endian version, stored in network order (no htonl). */
 #define IP6_MULTICAST_SCOPE_ORGANIZATION_LOCAL  0x8
 #define IP6_MULTICAST_SCOPE_GLOBAL              0xe
 #define IP6_MULTICAST_SCOPE_RESERVEDF           0xf
-#define ip6_addr_ismulticast_iflocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xffff0000UL)) == PP_HTONL(0xff010000UL))
-#define ip6_addr_ismulticast_linklocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xffff0000UL)) == PP_HTONL(0xff020000UL))
-#define ip6_addr_ismulticast_adminlocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xffff0000UL)) == PP_HTONL(0xff040000UL))
-#define ip6_addr_ismulticast_sitelocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xffff0000UL)) == PP_HTONL(0xff050000UL))
-#define ip6_addr_ismulticast_orglocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xffff0000UL)) == PP_HTONL(0xff080000UL))
-#define ip6_addr_ismulticast_global(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xffff0000UL)) == PP_HTONL(0xff0e0000UL))
+#define ip6_addr_ismulticast_iflocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xff8f0000UL)) == PP_HTONL(0xff010000UL))
+#define ip6_addr_ismulticast_linklocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xff8f0000UL)) == PP_HTONL(0xff020000UL))
+#define ip6_addr_ismulticast_adminlocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xff8f0000UL)) == PP_HTONL(0xff040000UL))
+#define ip6_addr_ismulticast_sitelocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xff8f0000UL)) == PP_HTONL(0xff050000UL))
+#define ip6_addr_ismulticast_orglocal(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xff8f0000UL)) == PP_HTONL(0xff080000UL))
+#define ip6_addr_ismulticast_global(ip6addr) (((ip6addr)->addr[0] & PP_HTONL(0xff8f0000UL)) == PP_HTONL(0xff0e0000UL))
 
 /* TODO define get/set for well-know multicast addresses, e.g. ff02::1 */
 #define ip6_addr_isallnodes_iflocal(ip6addr) (((ip6addr)->addr[0] == PP_HTONL(0xff010000UL)) && \
@@ -260,16 +251,29 @@ Little-endian version, stored in network order (no htonl). */
 #define ip6_addr_ispreferred(addr_state) (addr_state == IP6_ADDR_PREFERRED)
 #define ip6_addr_isdeprecated(addr_state) (addr_state == IP6_ADDR_DEPRECATED)
 
-#define ip6_addr_debug_print(debug, ipaddr) \
+#define ip6_addr_debug_print_parts(debug, a, b, c, d, e, f, g, h) \
   LWIP_DEBUGF(debug, ("%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F, \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK1(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK2(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK3(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK4(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK5(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK6(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK7(ipaddr) : 0,    \
-                      ipaddr != NULL ? IP6_ADDR_BLOCK8(ipaddr) : 0))
+                      a, b, c, d, e, f, g, h))
+#define ip6_addr_debug_print(debug, ipaddr) \
+  ip6_addr_debug_print_parts(debug, \
+                      (ipaddr) != NULL ? IP6_ADDR_BLOCK1(ipaddr) : 0,    \
+                      (ipaddr) != NULL ? IP6_ADDR_BLOCK2(ipaddr) : 0,    \
+                      (ipaddr) != NULL ? IP6_ADDR_BLOCK3(ipaddr) : 0,    \
+                      (ipaddr) != NULL ? IP6_ADDR_BLOCK4(ipaddr) : 0,    \
+                      (ipaddr) != NULL ? IP6_ADDR_BLOCK5(ipaddr) : 0,    \
+                      (ipaddr) != NULL ? IP6_ADDR_BLOCK6(ipaddr) : 0,    \
+                      (ipaddr) != NULL ? IP6_ADDR_BLOCK7(ipaddr) : 0,    \
+                      (ipaddr) != NULL ? IP6_ADDR_BLOCK8(ipaddr) : 0)
+#define ip6_addr_debug_print_val(debug, ipaddr) \
+  ip6_addr_debug_print_parts(debug, \
+                      IP6_ADDR_BLOCK1(&(ipaddr)),    \
+                      IP6_ADDR_BLOCK2(&(ipaddr)),    \
+                      IP6_ADDR_BLOCK3(&(ipaddr)),    \
+                      IP6_ADDR_BLOCK4(&(ipaddr)),    \
+                      IP6_ADDR_BLOCK5(&(ipaddr)),    \
+                      IP6_ADDR_BLOCK6(&(ipaddr)),    \
+                      IP6_ADDR_BLOCK7(&(ipaddr)),    \
+                      IP6_ADDR_BLOCK8(&(ipaddr)))
 
 #define IP6ADDR_STRLEN_MAX    46
 

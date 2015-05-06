@@ -43,7 +43,6 @@
 #include "lwip/ip_addr.h"
 #include "lwip/err.h"
 #include "lwip/inet.h"
-#include "lwip/inet6.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -126,7 +125,10 @@ struct lwip_setgetsockopt_data {
 #if LWIP_MPU_COMPATIBLE
   u8_t optval[LWIP_SETGETSOCKOPT_MAXOPTLEN];
 #else
-  void* optval;
+  union {
+     void *p;
+     const void *pc;
+  } optval;
 #endif
   /** size of *optval */
   socklen_t optlen;
@@ -380,12 +382,15 @@ typedef struct ip_mreq {
 #undef  FD_SETSIZE
 /* Make FD_SETSIZE match NUM_SOCKETS in socket.c */
 #define FD_SETSIZE    MEMP_NUM_NETCONN
-#define FDSETSAFESET(n, p, code) do { \
-  if(((p) != NULL) && ((n) - LWIP_SOCKET_OFFSET < MEMP_NUM_NETCONN) && (((int)(n) - LWIP_SOCKET_OFFSET) >= 0)) { \
+#define FDSETSAFESET_VAL(n, p, code) do { \
+  if (((n) - LWIP_SOCKET_OFFSET < MEMP_NUM_NETCONN) && (((int)(n) - LWIP_SOCKET_OFFSET) >= 0)) { \
   code; }} while(0)
+#define FDSETSAFESET(n, p, code) do { \
+  if ((p) != NULL) { FDSETSAFESET_VAL(n, p, code); }} while(0)
 #define FDSETSAFEGET(n, p, code) (((p) != NULL) && ((n) - LWIP_SOCKET_OFFSET < MEMP_NUM_NETCONN) && (((int)(n) - LWIP_SOCKET_OFFSET) >= 0) ?\
   (code) : 0)
 #define FD_SET(n, p)  FDSETSAFESET(n, p, (p)->fd_bits[((n)-LWIP_SOCKET_OFFSET)/8] |=  (1 << (((n)-LWIP_SOCKET_OFFSET) & 7)))
+#define FD_SET_VAL(n, p) FDSETSAFESET_VAL(n, &(p), (p).fd_bits[((n)-LWIP_SOCKET_OFFSET)/8] |=  (1 << (((n)-LWIP_SOCKET_OFFSET) & 7)))
 #define FD_CLR(n, p)  FDSETSAFESET(n, p, (p)->fd_bits[((n)-LWIP_SOCKET_OFFSET)/8] &= ~(1 << (((n)-LWIP_SOCKET_OFFSET) & 7)))
 #define FD_ISSET(n,p) FDSETSAFEGET(n, p, (p)->fd_bits[((n)-LWIP_SOCKET_OFFSET)/8] &   (1 << (((n)-LWIP_SOCKET_OFFSET) & 7)))
 #define FD_ZERO(p)    memset((void*)(p), 0, sizeof(*(p)))
@@ -397,6 +402,8 @@ typedef struct fd_set
 
 #elif LWIP_SOCKET_OFFSET
 #error LWIP_SOCKET_OFFSET does not work with external FD_SET!
+#elif !defined(FD_SET_VAL)
+#define FD_SET_VAL(n, p) FD_SET(n, &(p))
 #endif /* FD_SET */
 
 /** LWIP_TIMEVAL_PRIVATE: if you want to use the struct timeval provided
@@ -464,19 +471,24 @@ int lwip_fcntl(int s, int cmd, int val);
 #define fcntl(a,b,c)          lwip_fcntl(a,b,c)
 #endif /* LWIP_POSIX_SOCKETS_IO_NAMES */
 
-#if LWIP_IPV6
+#if LWIP_IPV4 && LWIP_IPV6
 #define inet_ntop(af,src,dst,size) \
-    (((af) == AF_INET6) ? ip6addr_ntoa_r((src),(dst),(size)) \
-     : (((af) == AF_INET) ? ipaddr_ntoa_r((src),(dst),(size)) : NULL))
+    (((af) == AF_INET6) ? ip6addr_ntoa_r((const ip6_addr_t*)(src),(dst),(size)) \
+     : (((af) == AF_INET) ? ip4addr_ntoa_r((const ip4_addr_t*)(src),(dst),(size)) : NULL))
 #define inet_pton(af,src,dst) \
-    (((af) == AF_INET6) ? inet6_aton((src),(dst)) \
-     : (((af) == AF_INET) ? inet_aton((src),(dst)) : 0))
-#else /* LWIP_IPV6 */
+    (((af) == AF_INET6) ? ip6addr_aton((src),(ip6_addr_t*)(dst)) \
+     : (((af) == AF_INET) ? ip4addr_aton((src),(ip4_addr_t*)(dst)) : 0))
+#elif LWIP_IPV4 /* LWIP_IPV4 && LWIP_IPV6 */
 #define inet_ntop(af,src,dst,size) \
-    (((af) == AF_INET) ? ipaddr_ntoa_r((src),(dst),(size)) : NULL)
+    (((af) == AF_INET) ? ip4addr_ntoa_r((const ip4_addr_t*)(src),(dst),(size)) : NULL)
 #define inet_pton(af,src,dst) \
-    (((af) == AF_INET) ? inet_aton((src),(dst)) : 0)
-#endif /* LWIP_IPV6 */
+    (((af) == AF_INET) ? ip4addr_aton((src),(ip4_addr_t*)(dst)) : 0)
+#else /* LWIP_IPV4 && LWIP_IPV6 */
+#define inet_ntop(af,src,dst,size) \
+    (((af) == AF_INET6) ? ip6addr_ntoa_r((const ip6_addr_t*)(src),(dst),(size)) : NULL)
+#define inet_pton(af,src,dst) \
+    (((af) == AF_INET6) ? ip6addr_aton((src),(ip6_addr_t*)(dst)) : 0)
+#endif /* LWIP_IPV4 && LWIP_IPV6 */
 
 #endif /* LWIP_COMPAT_SOCKETS */
 

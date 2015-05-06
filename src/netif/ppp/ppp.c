@@ -90,10 +90,11 @@
 #include "lwip/snmp.h"
 #include "lwip/sio.h"
 #include "lwip/sys.h"
-#include "lwip/ip.h" /* for ip_input() */
+#include "lwip/ip4.h" /* for ip4_input() */
 #if PPP_IPV6_SUPPORT
 #include "lwip/ip6.h" /* for ip6_input() */
 #endif /* PPP_IPV6_SUPPORT */
+#include "lwip/dns.h"
 
 #include "netif/ppp/ppp_impl.h"
 #include "netif/ppp/pppos.h"
@@ -113,7 +114,10 @@
 #endif /* EAP_SUPPORT */
 #if CCP_SUPPORT
 #include "netif/ppp/ccp.h"
-#endif /* EAP_SUPPORT */
+#endif /* CCP_SUPPORT */
+#if MPPE_SUPPORT
+#include "netif/ppp/mppe.h"
+#endif /* MPPE_SUPPORT */
 #if ECP_SUPPORT
 #include "netif/ppp/ecp.h"
 #endif /* EAP_SUPPORT */
@@ -180,10 +184,13 @@ const struct protent* const protocols[] = {
 /* Prototypes for procedures local to this file. */
 static void ppp_do_connect(void *arg);
 static err_t ppp_netif_init_cb(struct netif *netif);
-static err_t ppp_netif_output_ip4(struct netif *netif, struct pbuf *pb, const ip_addr_t *ipaddr);
+#if LWIP_IPV4
+static err_t ppp_netif_output_ip4(struct netif *netif, struct pbuf *pb, const ip4_addr_t *ipaddr);
+#endif /* LWIP_IPV4 */
 #if PPP_IPV6_SUPPORT
 static err_t ppp_netif_output_ip6(struct netif *netif, struct pbuf *pb, const ip6_addr_t *ipaddr);
 #endif /* PPP_IPV6_SUPPORT */
+static err_t ppp_netif_output(struct netif *netif, struct pbuf *pb, u16_t protocol);
 
 /***********************************/
 /*** PUBLIC FUNCTION DEFINITIONS ***/
@@ -236,7 +243,7 @@ err_t ppp_connect(ppp_pcb *pcb, u16_t holdoff) {
     return ERR_ALREADY;
   }
 
-  PPPDEBUG(LOG_DEBUG, ("ppp_connect() called, holdoff=%d\n", holdoff));
+  PPPDEBUG(LOG_DEBUG, ("ppp_connect[%d]: holdoff=%d\n", pcb->netif->num, holdoff));
 
   if (holdoff == 0) {
     return pcb->link_cb->connect(pcb, pcb->link_ctx_cb);
@@ -264,7 +271,7 @@ err_t ppp_listen(ppp_pcb *pcb, struct ppp_addrs *addrs) {
     return ERR_ALREADY;
   }
 
-  PPPDEBUG(LOG_DEBUG, ("ppp_listen() called\n"));
+  PPPDEBUG(LOG_DEBUG, ("ppp_listen[%d]\n", pcb->netif->num));
 
   if (pcb->link_cb->listen) {
     return pcb->link_cb->listen(pcb, pcb->link_ctx_cb, addrs);
@@ -309,7 +316,7 @@ ppp_close(ppp_pcb *pcb, u8_t nocarrier)
    * take a little longer time, but is a safer choice from FSM point of view.
    */
   if (nocarrier && pcb->phase == PPP_PHASE_RUNNING) {
-    PPPDEBUG(LOG_DEBUG, ("ppp_close: unit %d -> lcp_lowerdown\n", pcb->netif->num));
+    PPPDEBUG(LOG_DEBUG, ("ppp_close[%d]: carrier lost -> lcp_lowerdown\n", pcb->netif->num));
     lcp_lowerdown(pcb);
     /* forced link termination, this will leave us at PPP_PHASE_DEAD. */
     link_terminated(pcb);
@@ -317,7 +324,7 @@ ppp_close(ppp_pcb *pcb, u8_t nocarrier)
   }
 
   /* Disconnect */
-  PPPDEBUG(LOG_DEBUG, ("ppp_close: unit %d kill_link -> lcp_close\n", pcb->netif->num));
+  PPPDEBUG(LOG_DEBUG, ("ppp_close[%d]: kill_link -> lcp_close\n", pcb->netif->num));
   /* LCP close request, this will leave us at PPP_PHASE_DEAD. */
   lcp_close(pcb, "User request");
   return ERR_OK;
@@ -341,12 +348,12 @@ ppp_close(ppp_pcb *pcb, u8_t nocarrier)
  * Return 0 on success, an error code on failure.
  */
 err_t ppp_free(ppp_pcb *pcb) {
-  int err;
+  err_t err;
   if (pcb->phase != PPP_PHASE_DEAD) {
     return ERR_CONN;
   }
 
-  PPPDEBUG(LOG_DEBUG, ("ppp_free: unit %d\n", pcb->netif->num));
+  PPPDEBUG(LOG_DEBUG, ("ppp_free[%d]\n", pcb->netif->num));
 
   netif_remove(pcb->netif);
 
@@ -416,12 +423,14 @@ static void ppp_do_connect(void *arg) {
 static err_t ppp_netif_init_cb(struct netif *netif) {
   netif->name[0] = 'p';
   netif->name[1] = 'p';
+#if LWIP_IPV4
   /* FIXME: change that when netif_null_output_ip4() will materialize */
   netif->output = ppp_netif_output_ip4;
+#endif /* LWIP_IPV4 */
 #if PPP_IPV6_SUPPORT
   netif->output_ip6 = ppp_netif_output_ip6;
 #endif /* PPP_IPV6_SUPPORT */
-  netif->flags = NETIF_FLAG_LINK_UP;
+  netif->flags = NETIF_FLAG_UP;
 #if LWIP_NETIF_HOSTNAME
   /* @todo: Initialize interface hostname */
   /* netif_set_hostname(netif, "lwip"); */
@@ -429,53 +438,118 @@ static err_t ppp_netif_init_cb(struct netif *netif) {
   return ERR_OK;
 }
 
+#if LWIP_IPV4
 /*
  * Send an IPv4 packet on the given connection.
  */
-static err_t ppp_netif_output_ip4(struct netif *netif, struct pbuf *pb, const ip_addr_t *ipaddr) {
-#if PPP_IPV4_SUPPORT
-  ppp_pcb *pcb = (ppp_pcb*)netif->state;
+static err_t ppp_netif_output_ip4(struct netif *netif, struct pbuf *pb, const ip4_addr_t *ipaddr) {
   LWIP_UNUSED_ARG(ipaddr);
-
-  /* Check that the link is up. */
-  if (!pcb->if4_up) {
-    PPPDEBUG(LOG_ERR, ("ppp_netif_output_ip4[%d]: link not up\n", pcb->netif->num));
-    LINK_STATS_INC(link.rterr);
-    LINK_STATS_INC(link.drop);
-    snmp_inc_ifoutdiscards(netif);
-    return ERR_RTE;
-  }
-
-  return pcb->link_cb->netif_output(pcb, pcb->link_ctx_cb, pb, PPP_IP);
+#if PPP_IPV4_SUPPORT
+  return ppp_netif_output(netif, pb, PPP_IP);
 #else /* PPP_IPV4_SUPPORT */
   LWIP_UNUSED_ARG(netif);
   LWIP_UNUSED_ARG(pb);
-  LWIP_UNUSED_ARG(ipaddr);
   return ERR_IF;
 #endif /* PPP_IPV4_SUPPORT */
 }
+#endif /* LWIP_IPV4 */
 
 #if PPP_IPV6_SUPPORT
 /*
  * Send an IPv6 packet on the given connection.
  */
 static err_t ppp_netif_output_ip6(struct netif *netif, struct pbuf *pb, const ip6_addr_t *ipaddr) {
-  ppp_pcb *pcb = (ppp_pcb*)netif->state;
   LWIP_UNUSED_ARG(ipaddr);
-
-  /* Check that the link is up. */
-  if (!pcb->if6_up) {
-    PPPDEBUG(LOG_ERR, ("ppp_netif_output_ip6[%d]: link not up\n", pcb->netif->num));
-    LINK_STATS_INC(link.rterr);
-    LINK_STATS_INC(link.drop);
-    snmp_inc_ifoutdiscards(netif);
-    return ERR_RTE;
-  }
-
-  return pcb->link_cb->netif_output(pcb, pcb->link_ctx_cb, pb, PPP_IPV6);
+  return ppp_netif_output(netif, pb, PPP_IPV6);
 }
 #endif /* PPP_IPV6_SUPPORT */
 
+static err_t ppp_netif_output(struct netif *netif, struct pbuf *pb, u16_t protocol) {
+  ppp_pcb *pcb = (ppp_pcb*)netif->state;
+
+  /* Check that the link is up. */
+  if (0
+#if PPP_IPV4_SUPPORT
+      || (protocol == PPP_IP && !pcb->if4_up)
+#endif /* PPP_IPV4_SUPPORT */
+#if PPP_IPV6_SUPPORT
+      || (protocol == PPP_IPV6 && !pcb->if6_up)
+#endif /* PPP_IPV6_SUPPORT */
+      ) {
+    PPPDEBUG(LOG_ERR, ("ppp_netif_output[%d]: link not up\n", pcb->netif->num));
+    goto err_rte_drop;
+  }
+
+#if MPPE_SUPPORT
+  /* If MPPE is required, refuse any IP packet until we are able to crypt them. */
+  if (pcb->settings.require_mppe &&
+            (!pcb->ccp_is_up || pcb->ccp_transmit_method != CI_MPPE) ) {
+    PPPDEBUG(LOG_ERR, ("ppp_netif_output[%d]: MPPE required, not up\n", pcb->netif->num));
+    goto err_rte_drop;
+  }
+#endif /* MPPE_SUPPORT */
+
+#if VJ_SUPPORT
+  /*
+   * Attempt Van Jacobson header compression if VJ is configured and
+   * this is an IP packet.
+   */
+  if (protocol == PPP_IP && pcb->vj_enabled) {
+    switch (vj_compress_tcp(&pcb->vj_comp, pb)) {
+      case TYPE_IP:
+        /* No change...
+           protocol = PPP_IP_PROTOCOL; */
+        break;
+      case TYPE_COMPRESSED_TCP:
+        protocol = PPP_VJC_COMP;
+        break;
+      case TYPE_UNCOMPRESSED_TCP:
+        protocol = PPP_VJC_UNCOMP;
+        break;
+      default:
+        PPPDEBUG(LOG_WARNING, ("pppos_netif_output[%d]: bad IP packet\n", pcb->netif->num));
+        LINK_STATS_INC(link.proterr);
+        LINK_STATS_INC(link.drop);
+        snmp_inc_ifoutdiscards(pcb->netif);
+        return ERR_VAL;
+    }
+  }
+#endif /* VJ_SUPPORT */
+
+#if CCP_SUPPORT
+  if (pcb->ccp_is_up) {
+#if MPPE_SUPPORT
+    err_t err;
+#endif /* MPPE_SUPPORT */
+
+    switch (pcb->ccp_transmit_method) {
+#if MPPE_SUPPORT
+    case CI_MPPE:
+      if ((err = mppe_compress(pcb, &pcb->mppe_comp, &pb, protocol)) != ERR_OK) {
+        LINK_STATS_INC(link.memerr);
+        LINK_STATS_INC(link.drop);
+        snmp_inc_ifoutdiscards(netif);
+        return err;
+      }
+
+      err = pcb->link_cb->netif_output(pcb, pcb->link_ctx_cb, pb, PPP_COMP);
+      pbuf_free(pb);
+      return err;
+#endif /* MPPE_SUPPORT */
+    default:
+      break;
+    }
+  }
+#endif /* CCP_SUPPORT */
+
+  return pcb->link_cb->netif_output(pcb, pcb->link_ctx_cb, pb, protocol);
+
+err_rte_drop:
+  LINK_STATS_INC(link.rterr);
+  LINK_STATS_INC(link.drop);
+  snmp_inc_ifoutdiscards(netif);
+  return ERR_RTE;
+}
 
 /************************************/
 /*** PRIVATE FUNCTION DEFINITIONS ***/
@@ -519,7 +593,9 @@ ppp_pcb *ppp_new(struct netif *pppif, ppp_link_status_cb_fn link_status_cb, void
   memset(pcb, 0, sizeof(ppp_pcb));
 
   /* default configuration */
+#if LWIP_DNS
   pcb->settings.usepeerdns = 1;
+#endif /* LWIP_DNS */
 
 #if PAP_SUPPORT
   pcb->settings.pap_timeout_time = UPAP_DEFTIMEOUT;
@@ -546,6 +622,10 @@ ppp_pcb *ppp_new(struct netif *pppif, ppp_link_status_cb_fn link_status_cb, void
 #endif /* PPP_SERVER */
 #endif /* EAP_SUPPORT */
 
+#if MPPE_SUPPORT
+  pcb->settings.refuse_mppe_stateful = 1;
+#endif /* MPPE_SUPPORT */
+
   pcb->settings.lcp_loopbackfail = LCP_DEFLOOPBACKFAIL;
   pcb->settings.lcp_echo_interval = LCP_ECHOINTERVAL;
   pcb->settings.lcp_echo_fails = LCP_MAXECHOFAILS;
@@ -556,8 +636,11 @@ ppp_pcb *ppp_new(struct netif *pppif, ppp_link_status_cb_fn link_status_cb, void
   pcb->settings.fsm_max_nak_loops = FSM_DEFMAXNAKLOOPS;
 
   pcb->netif = pppif;
-  if (!netif_add(pcb->netif, IP_ADDR_ANY, IP_ADDR_BROADCAST, IP_ADDR_ANY,
-                     (void *)pcb, ppp_netif_init_cb, NULL)) {
+  if (!netif_add(pcb->netif,
+#if LWIP_IPV4
+                 IP4_ADDR_ANY, IP4_ADDR_BROADCAST, IP4_ADDR_ANY,
+#endif /* LWIP_IPV4 */
+                 (void *)pcb, ppp_netif_init_cb, NULL)) {
     memp_free(MEMP_PPP_PCB, pcb);
     PPPDEBUG(LOG_ERR, ("ppp_new: netif_add failed\n"));
     return NULL;
@@ -586,9 +669,6 @@ void ppp_clear(ppp_pcb *pcb) {
 #endif /* PPP_STATS_SUPPORT */
 
   memset(&pcb->phase, 0, sizeof(ppp_pcb) - ( (char*)&((ppp_pcb*)0)->phase - (char*)0 ) );
-#if PPP_IPV4_SUPPORT
-  ip4_addr_set_u32(&pcb->addrs.netmask, IPADDR_BROADCAST);
-#endif /* PPP_IPV4_SUPPORT */
 
   /*
    * Initialize each protocol.
@@ -597,20 +677,24 @@ void ppp_clear(ppp_pcb *pcb) {
       (*protp->init)(pcb);
   }
 
+#if VJ_SUPPORT
+  vj_compress_init(&pcb->vj_comp);
+#endif /* VJ_SUPPORT */
+
   new_phase(pcb, PPP_PHASE_INITIALIZE);
 }
 
 /** Initiate LCP open request */
 void ppp_start(ppp_pcb *pcb) {
-  PPPDEBUG(LOG_DEBUG, ("ppp_start: unit %d\n", pcb->netif->num));
+  PPPDEBUG(LOG_DEBUG, ("ppp_start[%d]\n", pcb->netif->num));
   lcp_open(pcb); /* Start protocol */
   lcp_lowerup(pcb);
-  PPPDEBUG(LOG_DEBUG, ("ppp_start: finished\n"));
+  PPPDEBUG(LOG_DEBUG, ("ppp_start[%d]: finished\n", pcb->netif->num));
 }
 
 /** Called when link failed to setup */
 void ppp_link_failed(ppp_pcb *pcb) {
-  PPPDEBUG(LOG_DEBUG, ("ppp_failed: unit %d\n", pcb->netif->num));
+  PPPDEBUG(LOG_DEBUG, ("ppp_failed[%d]\n", pcb->netif->num));
   new_phase(pcb, PPP_PHASE_DEAD);
   pcb->err_code = PPPERR_OPEN;
   pcb->link_status_cb(pcb, pcb->err_code, pcb->ctx_cb);
@@ -618,7 +702,7 @@ void ppp_link_failed(ppp_pcb *pcb) {
 
 /** Called when link is normally down (i.e. it was asked to end) */
 void ppp_link_end(ppp_pcb *pcb) {
-  PPPDEBUG(LOG_DEBUG, ("ppp_end: unit %d\n", pcb->netif->num));
+  PPPDEBUG(LOG_DEBUG, ("ppp_end[%d]\n", pcb->netif->num));
   if (pcb->err_code == PPPERR_NONE) {
     pcb->err_code = PPPERR_CONNECT;
   }
@@ -635,16 +719,17 @@ void ppp_input(ppp_pcb *pcb, struct pbuf *pb) {
     const char *pname;
 #endif /* PPP_DEBUG && PPP_PROTOCOLNAME */
 
+  if (pb->len < 2) {
+    PPPDEBUG(LOG_ERR, ("ppp_input[%d]: packet too short\n", pcb->netif->num));
+    goto drop;
+  }
   protocol = (((u8_t *)pb->payload)[0] << 8) | ((u8_t*)pb->payload)[1];
 
 #if PRINTPKT_SUPPORT
   ppp_dump_packet("rcvd", (unsigned char *)pb->payload, pb->len);
 #endif /* PRINTPKT_SUPPORT */
 
-  if(pbuf_header(pb, -(s16_t)sizeof(protocol))) {
-    LWIP_ASSERT("pbuf_header failed\n", 0);
-    goto drop;
-  }
+  pbuf_header(pb, -(s16_t)sizeof(protocol));
 
   LINK_STATS_INC(link.recv);
   snmp_inc_ifinucastpkts(pcb->netif);
@@ -682,12 +767,71 @@ void ppp_input(ppp_pcb *pcb, struct pbuf *pb) {
 	goto drop;
   }
 
+#if CCP_SUPPORT
+#if MPPE_SUPPORT
+  /*
+   * MPPE is required and unencrypted data has arrived (this
+   * should never happen!). We should probably drop the link if
+   * the protocol is in the range of what should be encrypted.
+   * At the least, we drop this packet.
+   */
+  if (pcb->settings.require_mppe && (0
+#if PPP_IPV4_SUPPORT
+       || protocol == PPP_IP
+#endif /* PPP_IPV4_SUPPORT */
+#if PPP_IPV6_SUPPORT
+       || protocol == PPP_IPV6
+#endif /* PPP_IPV6_SUPPORT */
+       )) {
+    PPPDEBUG(LOG_ERR, ("ppp_input[%d]: MPPE required, received unencrypted data!\n", pcb->netif->num));
+    goto drop;
+  }
+#endif /* MPPE_SUPPORT */
+
+  if (protocol == PPP_COMP) {
+    u8_t *pl;
+
+    if (!pcb->ccp_is_up) {
+      goto drop;
+    }
+
+    switch (pcb->ccp_receive_method) {
+#if MPPE_SUPPORT
+    case CI_MPPE:
+      if (mppe_decompress(pcb, &pcb->mppe_decomp, &pb) != ERR_OK) {
+        goto drop;
+      }
+      break;
+#endif /* MPPE_SUPPORT */
+    default:
+      break;
+    }
+
+    /* Assume no PFC */
+    if (pb->len < 2) {
+      goto drop;
+    }
+
+    /* Extract and hide protocol (do PFC decompression if necessary) */
+    pl = (u8_t*)pb->payload;
+    if (pl[0] & 0x01) {
+      protocol = pl[0];
+      pbuf_header(pb, -(s16_t)1);
+    } else {
+      protocol = (pl[0] << 8) | pl[1];
+      pbuf_header(pb, -(s16_t)2);
+    }
+  }
+#endif /* CCP_SUPPORT */
+
   switch(protocol) {
 
+#if PPP_IPV4_SUPPORT
     case PPP_IP:            /* Internet Protocol */
-      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: ip in pbuf len=%d\n", pcb->netif->num, pb->len));
-      ip_input(pb, pcb->netif);
+      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: ip in pbuf len=%d\n", pcb->netif->num, pb->tot_len));
+      ip4_input(pb, pcb->netif);
       return;
+#endif /* PPP_IPV4_SUPPORT */
 
 <<<<<<< HEAD
         /* Prepare for a new packet. */
@@ -710,20 +854,45 @@ void ppp_input(ppp_pcb *pcb, struct pbuf *pb) {
 =======
 #if PPP_IPV6_SUPPORT
     case PPP_IPV6:          /* Internet Protocol Version 6 */
-      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: ip6 in pbuf len=%d\n", pcb->netif->num, pb->len));
+      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: ip6 in pbuf len=%d\n", pcb->netif->num, pb->tot_len));
       ip6_input(pb, pcb->netif);
       return;
 #endif /* PPP_IPV6_SUPPORT */
 >>>>>>> 4e520cdd3009cf2e04c50c173737b379ff7d72a2
 
+#if VJ_SUPPORT
+    case PPP_VJC_COMP:      /* VJ compressed TCP */
+      /*
+       * Clip off the VJ header and prepend the rebuilt TCP/IP header and
+       * pass the result to IP.
+       */
+      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: vj_comp in pbuf len=%d\n", pcb->netif->num, pb->len));
+      if (pcb->vj_enabled && vj_uncompress_tcp(&pb, &pcb->vj_comp) >= 0) {
+        ip4_input(pb, pcb->netif);
+        return;
+      }
+      /* Something's wrong so drop it. */
+      PPPDEBUG(LOG_WARNING, ("ppp_input[%d]: Dropping VJ compressed\n", pcb->netif->num));
+      break;
+
+    case PPP_VJC_UNCOMP:    /* VJ uncompressed TCP */
+      /*
+       * Process the TCP/IP header for VJ header compression and then pass
+       * the packet to IP.
+       */
+      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: vj_un in pbuf len=%d\n", pcb->netif->num, pb->len));
+      if (pcb->vj_enabled && vj_uncompress_uncomp(pb, &pcb->vj_comp) >= 0) {
+        ip4_input(pb, pcb->netif);
+        return;
+      }
+      /* Something's wrong so drop it. */
+      PPPDEBUG(LOG_WARNING, ("ppp_input[%d]: Dropping VJ uncompressed\n", pcb->netif->num));
+      break;
+#endif /* VJ_SUPPORT */
+
     default: {
       int i;
       const struct protent *protp;
-
-      /* If callback set, try to pass the input packet to low level protocol */
-      if (pcb->link_cb->netif_input && pcb->link_cb->netif_input(pcb, pcb->link_ctx_cb, pb, protocol) == ERR_OK) {
-        return;
-      }
 
       /*
        * Upcall the proper protocol input routine.
@@ -731,42 +900,39 @@ void ppp_input(ppp_pcb *pcb, struct pbuf *pb) {
       for (i = 0; (protp = protocols[i]) != NULL; ++i) {
         if (protp->protocol == protocol) {
           pb = ppp_singlebuf(pb);
-          (*protp->input)(pcb, (u_char*)pb->payload, pb->len);
+          (*protp->input)(pcb, (u8_t*)pb->payload, pb->len);
           goto out;
         }
-#if 0 /* UNUSED
-       *
-       * This is actually a (hacked?) way for the PPP kernel implementation to pass a
-       * data packet to the PPP daemon. The PPP daemon normally only do signaling
-       * (LCP, PAP, CHAP, IPCP, ...) and does not handle any data packet at all.
-       *
-       * This is only used by CCP, which we cannot support until we have a CCP data
-       * implementation.
-       */
-      if (protocol == (protp->protocol & ~0x8000)
-        && protp->datainput != NULL) {
-        (*protp->datainput)(pcb, pb->payload, pb->len);
-        goto out;
-      }
+#if 0   /* UNUSED
+         *
+         * This is actually a (hacked?) way for the PPP kernel implementation to pass a
+         * data packet to the PPP daemon. The PPP daemon normally only do signaling
+         * (LCP, PAP, CHAP, IPCP, ...) and does not handle any data packet at all.
+         *
+         * This is only used by CCP, which we cannot support until we have a CCP data
+         * implementation.
+         */
+        if (protocol == (protp->protocol & ~0x8000)
+          && protp->datainput != NULL) {
+          (*protp->datainput)(pcb, pb->payload, pb->len);
+          goto out;
+        }
 #endif /* UNUSED */
-    }
+      }
 
 #if PPP_DEBUG
 #if PPP_PROTOCOLNAME
-    pname = protocol_name(protocol);
-    if (pname != NULL) {
-      ppp_warn("Unsupported protocol '%s' (0x%x) received", pname, protocol);
-    } else
+      pname = protocol_name(protocol);
+      if (pname != NULL) {
+        ppp_warn("Unsupported protocol '%s' (0x%x) received", pname, protocol);
+      } else
 #endif /* PPP_PROTOCOLNAME */
-      ppp_warn("Unsupported protocol 0x%x received", protocol);
+        ppp_warn("Unsupported protocol 0x%x received", protocol);
 #endif /* PPP_DEBUG */
-      if (pbuf_header(pb, (s16_t)sizeof(protocol))) {
-        LWIP_ASSERT("pbuf_header failed\n", 0);
-        goto drop;
+        pbuf_header(pb, (s16_t)sizeof(protocol));
+        lcp_sprotrej(pcb, (u8_t*)pb->payload, pb->len);
       }
-      lcp_sprotrej(pcb, (u_char*)pb->payload, pb->len);
-    }
-    break;
+      break;
   }
 
 drop:
@@ -782,7 +948,7 @@ out:
 /* merge a pbuf chain into one pbuf */
 struct pbuf *ppp_singlebuf(struct pbuf *p) {
   struct pbuf *q, *b;
-  u_char *pl;
+  u8_t *pl;
 
   if(p->tot_len == p->len) {
     return p;
@@ -795,7 +961,7 @@ struct pbuf *ppp_singlebuf(struct pbuf *p) {
     return p; /* live dangerously */
   }
 
-  for(b = p, pl = (u_char*)q->payload; b != NULL; b = b->next) {
+  for(b = p, pl = (u8_t*)q->payload; b != NULL; b = b->next) {
     MEMCPY(pl, b->payload, b->len);
     pl += b->len;
   }
@@ -816,7 +982,7 @@ struct pbuf *ppp_singlebuf(struct pbuf *p) {
  *  RETURN: >= 0 Number of characters written
  *           -1 Failed to write to device
  */
-int ppp_write(ppp_pcb *pcb, struct pbuf *p) {
+err_t ppp_write(ppp_pcb *pcb, struct pbuf *p) {
 #if PRINTPKT_SUPPORT
   ppp_dump_packet("sent", (unsigned char *)p->payload+2, p->len-2);
 #endif /* PRINTPKT_SUPPORT */
@@ -824,9 +990,9 @@ int ppp_write(ppp_pcb *pcb, struct pbuf *p) {
 }
 
 void ppp_link_terminated(ppp_pcb *pcb) {
-  PPPDEBUG(LOG_DEBUG, ("ppp_link_terminated: unit %d\n", pcb->netif->num));
+  PPPDEBUG(LOG_DEBUG, ("ppp_link_terminated[%d]\n", pcb->netif->num));
   pcb->link_cb->disconnect(pcb, pcb->link_ctx_cb);
-  PPPDEBUG(LOG_DEBUG, ("ppp_link_terminated: finished.\n"));
+  PPPDEBUG(LOG_DEBUG, ("ppp_link_terminated[%d]: finished.\n", pcb->netif->num));
 }
 
 
@@ -840,7 +1006,7 @@ void ppp_link_terminated(ppp_pcb *pcb) {
  */
 void new_phase(ppp_pcb *pcb, int p) {
   pcb->phase = p;
-  PPPDEBUG(LOG_DEBUG, ("ppp phase changed: unit %d: phase=%d\n", pcb->netif->num, pcb->phase));
+  PPPDEBUG(LOG_DEBUG, ("ppp phase changed[%d]: phase=%d\n", pcb->netif->num, pcb->phase));
 #if PPP_NOTIFY_PHASE
   if (pcb->notify_phase_cb != NULL) {
     pcb->notify_phase_cb(pcb, p, pcb->ctx_cb);
@@ -854,13 +1020,10 @@ void new_phase(ppp_pcb *pcb, int p) {
  */
 int ppp_send_config(ppp_pcb *pcb, int mtu, u32_t accm, int pcomp, int accomp) {
   LWIP_UNUSED_ARG(mtu);
-
   /* pcb->mtu = mtu; -- set correctly with netif_set_mtu */
-  pcb->pcomp = pcomp;
-  pcb->accomp = accomp;
 
   if (pcb->link_cb->send_config) {
-    pcb->link_cb->send_config(pcb, pcb->link_ctx_cb, accm);
+    pcb->link_cb->send_config(pcb, pcb->link_ctx_cb, accm, pcomp, accomp);
   }
 
   PPPDEBUG(LOG_INFO, ("ppp_send_config[%d]\n", pcb->netif->num) );
@@ -872,12 +1035,10 @@ int ppp_send_config(ppp_pcb *pcb, int mtu, u32_t accm, int pcomp, int accomp) {
  * the ppp interface.
  */
 int ppp_recv_config(ppp_pcb *pcb, int mru, u32_t accm, int pcomp, int accomp) {
-  LWIP_UNUSED_ARG(accomp);
-  LWIP_UNUSED_ARG(pcomp);
   LWIP_UNUSED_ARG(mru);
 
   if (pcb->link_cb->recv_config) {
-    pcb->link_cb->recv_config(pcb, pcb->link_ctx_cb, accm);
+    pcb->link_cb->recv_config(pcb, pcb->link_ctx_cb, accm, pcomp, accomp);
   }
 
   PPPDEBUG(LOG_INFO, ("ppp_recv_config[%d]\n", pcb->netif->num));
@@ -888,12 +1049,13 @@ int ppp_recv_config(ppp_pcb *pcb, int mru, u32_t accm, int pcomp, int accomp) {
 /*
  * sifaddr - Config the interface IP addresses and netmask.
  */
-int sifaddr(ppp_pcb *pcb, u32_t our_adr, u32_t his_adr,
-	     u32_t net_mask) {
+int sifaddr(ppp_pcb *pcb, u32_t our_adr, u32_t his_adr, u32_t netmask) {
+  ip4_addr_t ip, nm, gw;
 
-  ip4_addr_set_u32(&pcb->addrs.our_ipaddr, our_adr);
-  ip4_addr_set_u32(&pcb->addrs.his_ipaddr, his_adr);
-  ip4_addr_set_u32(&pcb->addrs.netmask, net_mask);
+  ip4_addr_set_u32(&ip, our_adr);
+  ip4_addr_set_u32(&nm, netmask);
+  ip4_addr_set_u32(&gw, his_adr);
+  netif_set_addr(pcb->netif, &ip, &nm, &gw);
   return 1;
 }
 
@@ -903,16 +1065,14 @@ int sifaddr(ppp_pcb *pcb, u32_t our_adr, u32_t his_adr,
  * through the interface if possible.
  */
 int cifaddr(ppp_pcb *pcb, u32_t our_adr, u32_t his_adr) {
-
   LWIP_UNUSED_ARG(our_adr);
   LWIP_UNUSED_ARG(his_adr);
 
-  ip_addr_set_zero(&pcb->addrs.our_ipaddr);
-  ip_addr_set_zero(&pcb->addrs.his_ipaddr);
-  ip4_addr_set_u32(&pcb->addrs.netmask, IPADDR_BROADCAST);
+  netif_set_addr(pcb->netif, IP4_ADDR_ANY, IP4_ADDR_BROADCAST, IP4_ADDR_ANY);
   return 1;
 }
 
+#if 0 /* UNUSED - PROXY ARP */
 /********************************************************************
  *
  * sifproxyarp - Make a proxy ARP entry for the peer.
@@ -921,7 +1081,6 @@ int cifaddr(ppp_pcb *pcb, u32_t our_adr, u32_t his_adr) {
 int sifproxyarp(ppp_pcb *pcb, u32_t his_adr) {
   LWIP_UNUSED_ARG(pcb);
   LWIP_UNUSED_ARG(his_adr);
-  /* FIXME: do we really need that in IPCP ? */
   return 0;
 }
 
@@ -933,17 +1092,22 @@ int sifproxyarp(ppp_pcb *pcb, u32_t his_adr) {
 int cifproxyarp(ppp_pcb *pcb, u32_t his_adr) {
   LWIP_UNUSED_ARG(pcb);
   LWIP_UNUSED_ARG(his_adr);
-  /* FIXME: do we really need that in IPCP ? */
   return 0;
 }
+#endif /* UNUSED - PROXY ARP */
 
+#if LWIP_DNS
 /*
  * sdns - Config the DNS servers
  */
 int sdns(ppp_pcb *pcb, u32_t ns1, u32_t ns2) {
+  ip_addr_t ns;
+  LWIP_UNUSED_ARG(pcb);
 
-  ip4_addr_set_u32(&pcb->addrs.dns1, ns1);
-  ip4_addr_set_u32(&pcb->addrs.dns2, ns2);
+  ip_addr_set_ip4_u32(&ns, ns1);
+  dns_setserver(0, &ns);
+  ip_addr_set_ip4_u32(&ns, ns2);
+  dns_setserver(1, &ns);
   return 1;
 }
 
@@ -952,14 +1116,22 @@ int sdns(ppp_pcb *pcb, u32_t ns1, u32_t ns2) {
  * cdns - Clear the DNS servers
  */
 int cdns(ppp_pcb *pcb, u32_t ns1, u32_t ns2) {
+  ip_addr_t nsa, nsb;
+  LWIP_UNUSED_ARG(pcb);
 
-  LWIP_UNUSED_ARG(ns1);
-  LWIP_UNUSED_ARG(ns2);
-
-  ip_addr_set_zero(&pcb->addrs.dns1);
-  ip_addr_set_zero(&pcb->addrs.dns2);
+  nsa = dns_getserver(0);
+  ip_addr_set_ip4_u32(&nsb, ns1);
+  if (ip_addr_cmp(&nsa, &nsb)) {
+    dns_setserver(0, (ip_addr_t*)IP_ADDR_ANY);
+  }
+  nsa = dns_getserver(1);
+  ip_addr_set_ip4_u32(&nsb, ns2);
+  if (ip_addr_cmp(&nsa, &nsb)) {
+    dns_setserver(1, (ip_addr_t*)IP_ADDR_ANY);
+  }
   return 1;
 }
+#endif /* LWIP_DNS */
 
 #if VJ_SUPPORT
 /********************************************************************
@@ -967,9 +1139,11 @@ int cdns(ppp_pcb *pcb, u32_t ns1, u32_t ns2) {
  * sifvjcomp - config tcp header compression
  */
 int sifvjcomp(ppp_pcb *pcb, int vjcomp, int cidcomp, int maxcid) {
-  if (pcb->link_cb->vj_config) {
-    pcb->link_cb->vj_config(pcb, pcb->link_ctx_cb, vjcomp, cidcomp, maxcid);
-  }
+  pcb->vj_enabled = vjcomp;
+  pcb->vj_comp.compressSlot = cidcomp;
+  pcb->vj_comp.maxSlotIndex = maxcid;
+  PPPDEBUG(LOG_INFO, ("sifvjcomp[%d]: VJ compress enable=%d slot=%d max slot=%d\n",
+            pcb->netif->num, vjcomp, cidcomp, maxcid));
   return 0;
 }
 #endif /* VJ_SUPPORT */
@@ -978,15 +1152,11 @@ int sifvjcomp(ppp_pcb *pcb, int vjcomp, int cidcomp, int maxcid) {
  * sifup - Config the interface up and enable IP packets to pass.
  */
 int sifup(ppp_pcb *pcb) {
-
-  netif_set_addr(pcb->netif, &pcb->addrs.our_ipaddr, &pcb->addrs.netmask,
-                 &pcb->addrs.his_ipaddr);
-
-  netif_set_up(pcb->netif);
   pcb->if4_up = 1;
   pcb->err_code = PPPERR_NONE;
+  netif_set_link_up(pcb->netif);
 
-  PPPDEBUG(LOG_DEBUG, ("sifup: unit %d: err_code=%d\n", pcb->netif->num, pcb->err_code));
+  PPPDEBUG(LOG_DEBUG, ("sifup[%d]: err_code=%d\n", pcb->netif->num, pcb->err_code));
   pcb->link_status_cb(pcb, pcb->err_code, pcb->ctx_cb);
   return 1;
 }
@@ -1006,134 +1176,11 @@ int sifdown(ppp_pcb *pcb) {
    && !pcb->if6_up
 #endif /* PPP_IPV6_SUPPORT */
   ) {
-    /* make sure the netif status callback is called */
-    netif_set_down(pcb->netif);
+    /* make sure the netif link callback is called */
+    netif_set_link_down(pcb->netif);
   }
-  PPPDEBUG(LOG_DEBUG, ("sifdown: unit %d: err_code=%d\n", pcb->netif->num, pcb->err_code));
+  PPPDEBUG(LOG_DEBUG, ("sifdown[%d]: err_code=%d\n", pcb->netif->num, pcb->err_code));
   return 1;
-}
-#endif /* PPP_IPV4_SUPPORT */
-
-#if PPP_IPV6_SUPPORT
-#define IN6_LLADDR_FROM_EUI64(ip6, eui64) do {    \
-  ip6.addr[0] = PP_HTONL(0xfe800000);             \
-  ip6.addr[1] = 0;                                \
-  eui64_copy(eui64, ip6.addr[2]);                 \
-  } while (0)
-
-/********************************************************************
- *
- * sif6addr - Config the interface with an IPv6 link-local address
- */
-int sif6addr(ppp_pcb *pcb, eui64_t our_eui64, eui64_t his_eui64) {
-
-  IN6_LLADDR_FROM_EUI64(pcb->addrs.our6_ipaddr, our_eui64);
-  IN6_LLADDR_FROM_EUI64(pcb->addrs.his6_ipaddr, his_eui64);
-  return 1;
-}
-
-/********************************************************************
- *
- * cif6addr - Remove IPv6 address from interface
- */
-int cif6addr(ppp_pcb *pcb, eui64_t our_eui64, eui64_t his_eui64) {
-
-  LWIP_UNUSED_ARG(our_eui64);
-  LWIP_UNUSED_ARG(his_eui64);
-
-  ip6_addr_set_zero(&pcb->addrs.our6_ipaddr);
-  ip6_addr_set_zero(&pcb->addrs.his6_ipaddr);
-  return 1;
-}
-
-/*
- * sif6up - Config the interface up and enable IPv6 packets to pass.
- */
-int sif6up(ppp_pcb *pcb) {
-
-  ip6_addr_copy(pcb->netif->ip6_addr[0], pcb->addrs.our6_ipaddr);
-  netif_ip6_addr_set_state(pcb->netif, 0, IP6_ADDR_PREFERRED);
-
-  netif_set_up(pcb->netif);
-  pcb->if6_up = 1;
-  pcb->err_code = PPPERR_NONE;
-
-  PPPDEBUG(LOG_DEBUG, ("sif6up: unit %d: err_code=%d\n", pcb->netif->num, pcb->err_code));
-  pcb->link_status_cb(pcb, pcb->err_code, pcb->ctx_cb);
-  return 1;
-}
-
-/********************************************************************
- *
- * sif6down - Disable the indicated protocol and config the interface
- *	      down if there are no remaining protocols.
- */
-int sif6down(ppp_pcb *pcb) {
-
-  pcb->if6_up = 0;
-  /* set the interface down if IPv4 is down as well */
-  if (1
-#if PPP_IPV4_SUPPORT
-   /* set the interface down if IPv6 is down as well */
-   && !pcb->if4_up
-#endif /* PPP_IPV4_SUPPORT */
-  ) {
-    /* make sure the netif status callback is called */
-    netif_set_down(pcb->netif);
-  }
-  PPPDEBUG(LOG_DEBUG, ("sif6down: unit %d: err_code=%d\n", pcb->netif->num, pcb->err_code));
-  return 1;
-}
-#endif /* PPP_IPV6_SUPPORT */
-
-/*
- * sifnpmode - Set the mode for handling packets for a given NP.
- */
-int sifnpmode(ppp_pcb *pcb, int proto, enum NPmode mode) {
-  LWIP_UNUSED_ARG(pcb);
-  LWIP_UNUSED_ARG(proto);
-  LWIP_UNUSED_ARG(mode);
-  return 0;
-}
-
-/*
- * netif_set_mtu - set the MTU on the PPP network interface.
- */
-void netif_set_mtu(ppp_pcb *pcb, int mtu) {
-
-  pcb->netif->mtu = mtu;
-}
-
-/*
- * netif_get_mtu - get PPP interface MTU
- */
-int netif_get_mtu(ppp_pcb *pcb) {
-
-  return pcb->netif->mtu;
-}
-
-#if PPP_IDLETIMELIMIT
-/********************************************************************
- *
- * get_idle_time - return how long the link has been idle.
- */
-int get_idle_time(ppp_pcb *pcb, struct ppp_idle *ip) {
-    /* FIXME: add idle time support and make it optional */
-    LWIP_UNUSED_ARG(pcb);
-    LWIP_UNUSED_ARG(ip);
-    return 1;
-}
-#endif /* PPP_IDLETIMELIMIT */
-
-/********************************************************************
- *
- * get_loop_output - get outgoing packets from the ppp device,
- * and detect when we want to bring the real link up.
- * Return value is 1 if we need to bring up the link, 0 otherwise.
- */
-int get_loop_output(void) {
-    /* FIXME: necessary for "demand", do we really need to support on-demand ? */
-    return 0;
 }
 
 /********************************************************************
@@ -1147,7 +1194,7 @@ int get_loop_output(void) {
  */
 u32_t get_mask(u32_t addr) {
 #if 0
-	u32_t mask, nmask;
+  u32_t mask, nmask;
 
   addr = htonl(addr);
   if (IP_CLASSA(addr)) { /* determine network mask for address class */
@@ -1167,11 +1214,210 @@ u32_t get_mask(u32_t addr) {
    */
   /* return mask; */
   return mask;
-#endif
+#endif /* 0 */
   LWIP_UNUSED_ARG(addr);
   return IPADDR_BROADCAST;
 }
+#endif /* PPP_IPV4_SUPPORT */
 
+#if PPP_IPV6_SUPPORT
+#define IN6_LLADDR_FROM_EUI64(ip6, eui64) do {    \
+  ip6.addr[0] = PP_HTONL(0xfe800000);             \
+  ip6.addr[1] = 0;                                \
+  eui64_copy(eui64, ip6.addr[2]);                 \
+  } while (0)
+
+/********************************************************************
+ *
+ * sif6addr - Config the interface with an IPv6 link-local address
+ */
+int sif6addr(ppp_pcb *pcb, eui64_t our_eui64, eui64_t his_eui64) {
+  ip6_addr_t ip6;
+  LWIP_UNUSED_ARG(his_eui64);
+
+  IN6_LLADDR_FROM_EUI64(ip6, our_eui64);
+  ip6_addr_copy(pcb->netif->ip6_addr[0], ip6);
+  netif_ip6_addr_set_state(pcb->netif, 0, IP6_ADDR_PREFERRED);
+  /* FIXME: should we add an IPv6 static neighbor using his_eui64 ? */
+  return 1;
+}
+
+/********************************************************************
+ *
+ * cif6addr - Remove IPv6 address from interface
+ */
+int cif6addr(ppp_pcb *pcb, eui64_t our_eui64, eui64_t his_eui64) {
+  LWIP_UNUSED_ARG(our_eui64);
+  LWIP_UNUSED_ARG(his_eui64);
+
+  netif_ip6_addr_set_state(pcb->netif, 0, IP6_ADDR_INVALID);
+  ip6_addr_set_zero(&pcb->netif->ip6_addr[0]);
+  return 1;
+}
+
+/*
+ * sif6up - Config the interface up and enable IPv6 packets to pass.
+ */
+int sif6up(ppp_pcb *pcb) {
+
+  pcb->if6_up = 1;
+  pcb->err_code = PPPERR_NONE;
+  netif_set_link_up(pcb->netif);
+
+  PPPDEBUG(LOG_DEBUG, ("sif6up[%d]: err_code=%d\n", pcb->netif->num, pcb->err_code));
+  pcb->link_status_cb(pcb, pcb->err_code, pcb->ctx_cb);
+  return 1;
+}
+
+/********************************************************************
+ *
+ * sif6down - Disable the indicated protocol and config the interface
+ *	      down if there are no remaining protocols.
+ */
+int sif6down(ppp_pcb *pcb) {
+
+  pcb->if6_up = 0;
+
+  if (1
+#if PPP_IPV4_SUPPORT
+   /* set the interface down if IPv4 is down as well */
+   && !pcb->if4_up
+#endif /* PPP_IPV4_SUPPORT */
+  ) {
+    /* make sure the netif link callback is called */
+    netif_set_link_down(pcb->netif);
+  }
+  PPPDEBUG(LOG_DEBUG, ("sif6down[%d]: err_code=%d\n", pcb->netif->num, pcb->err_code));
+  return 1;
+}
+#endif /* PPP_IPV6_SUPPORT */
+
+#if DEMAND_SUPPORT
+/*
+ * sifnpmode - Set the mode for handling packets for a given NP.
+ */
+int sifnpmode(ppp_pcb *pcb, int proto, enum NPmode mode) {
+  LWIP_UNUSED_ARG(pcb);
+  LWIP_UNUSED_ARG(proto);
+  LWIP_UNUSED_ARG(mode);
+  return 0;
+}
+#endif /* DEMAND_SUPPORT */
+
+/*
+ * netif_set_mtu - set the MTU on the PPP network interface.
+ */
+void netif_set_mtu(ppp_pcb *pcb, int mtu) {
+
+  pcb->netif->mtu = mtu;
+  PPPDEBUG(LOG_INFO, ("netif_set_mtu[%d]: mtu=%d\n", pcb->netif->num, mtu));
+}
+
+/*
+ * netif_get_mtu - get PPP interface MTU
+ */
+int netif_get_mtu(ppp_pcb *pcb) {
+
+  return pcb->netif->mtu;
+}
+
+#if CCP_SUPPORT
+#if 0 /* unused */
+/*
+ * ccp_test - whether a given compression method is acceptable for use.
+ */
+int
+ccp_test(ppp_pcb *pcb, u_char *opt_ptr, int opt_len, int for_transmit)
+{
+  LWIP_UNUSED_ARG(pcb);
+  LWIP_UNUSED_ARG(opt_ptr);
+  LWIP_UNUSED_ARG(opt_len);
+  LWIP_UNUSED_ARG(for_transmit);
+  return -1;
+}
+#endif /* unused */
+
+/*
+ * ccp_set - inform about the current state of CCP.
+ */
+void
+ccp_set(ppp_pcb *pcb, u8_t isopen, u8_t isup, u8_t receive_method, u8_t transmit_method)
+{
+  pcb->ccp_is_open = isopen;
+  pcb->ccp_is_up = isup;
+  pcb->ccp_receive_method = receive_method;
+  pcb->ccp_transmit_method = transmit_method;
+  PPPDEBUG(LOG_DEBUG, ("ccp_set[%d]: is_open=%d, is_up=%d, receive_method=%u, transmit_method=%u\n",
+           pcb->netif->num, isopen, isup, receive_method, transmit_method));
+}
+
+void
+ccp_reset_comp(ppp_pcb *pcb)
+{
+  switch (pcb->ccp_transmit_method) {
+#if MPPE_SUPPORT
+  case CI_MPPE:
+    mppe_comp_reset(pcb, &pcb->mppe_comp);
+    break;
+#endif /* MPPE_SUPPORT */
+  default:
+    break;
+  }
+}
+
+void
+ccp_reset_decomp(ppp_pcb *pcb)
+{
+  switch (pcb->ccp_receive_method) {
+#if MPPE_SUPPORT
+  case CI_MPPE:
+    mppe_decomp_reset(pcb, &pcb->mppe_decomp);
+    break;
+#endif /* MPPE_SUPPORT */
+  default:
+    break;
+  }
+}
+
+#if 0 /* unused */
+/*
+ * ccp_fatal_error - returns 1 if decompression was disabled as a
+ * result of an error detected after decompression of a packet,
+ * 0 otherwise.  This is necessary because of patent nonsense.
+ */
+int
+ccp_fatal_error(ppp_pcb *pcb)
+{
+  LWIP_UNUSED_ARG(pcb);
+  return 1;
+}
+#endif /* unused */
+#endif /* CCP_SUPPORT */
+
+#if PPP_IDLETIMELIMIT
+/********************************************************************
+ *
+ * get_idle_time - return how long the link has been idle.
+ */
+int get_idle_time(ppp_pcb *pcb, struct ppp_idle *ip) {
+    /* FIXME: add idle time support and make it optional */
+    LWIP_UNUSED_ARG(pcb);
+    LWIP_UNUSED_ARG(ip);
+    return 1;
+}
+#endif /* PPP_IDLETIMELIMIT */
+
+#if DEMAND_SUPPORT
+/********************************************************************
+ *
+ * get_loop_output - get outgoing packets from the ppp device,
+ * and detect when we want to bring the real link up.
+ * Return value is 1 if we need to bring up the link, 0 otherwise.
+ */
+int get_loop_output(void) {
+    return 0;
+}
+#endif /* DEMAND_SUPPORT */
 
 #if PPP_PROTOCOLNAME
 /* List of protocol names, to make our messages a little more informative. */

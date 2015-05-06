@@ -49,6 +49,7 @@
 #include "lwip/ip.h"
 #include "netif/etharp.h"
 #include "netif/ppp/pppoe.h"
+#include "netif/ppp/pppos.h"
 
 #define TCPIP_MSG_VAR_REF(name)     API_VAR_REF(name)
 #define TCPIP_MSG_VAR_DECLARE(name) API_VAR_DECLARE(struct tcpip_msg, name)
@@ -114,16 +115,16 @@ tcpip_thread(void *arg)
         ethernet_input(msg->msg.inp.p, msg->msg.inp.netif);
       } else
 #endif /* LWIP_ETHERNET */
-#if LWIP_IPV6
-      if (((*(u8_t*)(msg->msg.inp.p->payload)) & 0xf0) == 0x60) {
-          ip6_input(msg->msg.inp.p, msg->msg.inp.netif);
-      } else
-#endif /* LWIP_IPV6 */
-      {
-        ip_input(msg->msg.inp.p, msg->msg.inp.netif);
-      }
+      ip_input(msg->msg.inp.p, msg->msg.inp.netif);
       memp_free(MEMP_TCPIP_MSG_INPKT, msg);
       break;
+
+#if PPPOS_SUPPORT && !PPP_INPROC_IRQ_SAFE
+    case TCPIP_MSG_INPKT_PPPOS:
+      pppos_input_sys(msg->msg.inp.p, msg->msg.inp.netif);
+      memp_free(MEMP_TCPIP_MSG_INPKT, msg);
+      break;
+#endif /* PPPOS_SUPPORT && !PPP_INPROC_IRQ_SAFE */
 #endif /* LWIP_TCPIP_CORE_LOCKING_INPUT */
 
 #if LWIP_NETIF_API
@@ -192,20 +193,13 @@ tcpip_input(struct pbuf *p, struct netif *inp)
     ret = ethernet_input(p, inp);
   } else
 #endif /* LWIP_ETHERNET */
-#if LWIP_IPV6 
-  if (((*(u8_t*)(p->payload)) & 0xf0) == 0x60) { 
-    ret = ip6_input(p, inp); 
-  } else 
-#endif /* LWIP_IPV6 */
-  {
-    ret = ip_input(p, inp);
-  }
+  ret = ip_input(p, inp);
   UNLOCK_TCPIP_CORE();
   return ret;
 #else /* LWIP_TCPIP_CORE_LOCKING_INPUT */
   struct tcpip_msg *msg;
 
-  if (!sys_mbox_valid(&mbox)) {
+  if (!sys_mbox_valid_val(mbox)) {
     return ERR_VAL;
   }
   msg = (struct tcpip_msg *)memp_malloc(MEMP_TCPIP_MSG_INPKT);
@@ -224,6 +218,48 @@ tcpip_input(struct pbuf *p, struct netif *inp)
 #endif /* LWIP_TCPIP_CORE_LOCKING_INPUT */
 }
 
+#if PPPOS_SUPPORT && !PPP_INPROC_IRQ_SAFE
+/**
+ * Pass a received packet to tcpip_thread for input processing
+ *
+ * @param p the received packet, p->payload pointing to the Ethernet header or
+ *          to an IP header (if inp doesn't have NETIF_FLAG_ETHARP or
+ *          NETIF_FLAG_ETHERNET flags)
+ * @param inp the network interface on which the packet was received
+ */
+err_t
+tcpip_pppos_input(struct pbuf *p, struct netif *inp)
+{
+#if LWIP_TCPIP_CORE_LOCKING_INPUT
+  err_t ret;
+  LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_pppos_input: PACKET %p/%p\n", (void *)p, (void *)inp));
+  LOCK_TCPIP_CORE();
+  ret = pppos_input_sys(p, inp);
+  UNLOCK_TCPIP_CORE();
+  return ret;
+#else /* LWIP_TCPIP_CORE_LOCKING_INPUT */
+  struct tcpip_msg *msg;
+
+  if (!sys_mbox_valid_val(mbox)) {
+    return ERR_VAL;
+  }
+  msg = (struct tcpip_msg *)memp_malloc(MEMP_TCPIP_MSG_INPKT);
+  if (msg == NULL) {
+    return ERR_MEM;
+  }
+
+  msg->type = TCPIP_MSG_INPKT_PPPOS;
+  msg->msg.inp.p = p;
+  msg->msg.inp.netif = inp;
+  if (sys_mbox_trypost(&mbox, msg) != ERR_OK) {
+    memp_free(MEMP_TCPIP_MSG_INPKT, msg);
+    return ERR_MEM;
+  }
+  return ERR_OK;
+#endif /* LWIP_TCPIP_CORE_LOCKING_INPUT */
+}
+#endif /* PPPOS_SUPPORT && !PPP_INPROC_IRQ_SAFE */
+
 /**
  * Call a specific function in the thread context of
  * tcpip_thread for easy access synchronization.
@@ -240,7 +276,7 @@ tcpip_callback_with_block(tcpip_callback_fn function, void *ctx, u8_t block)
 {
   struct tcpip_msg *msg;
 
-  if (sys_mbox_valid(&mbox)) {
+  if (sys_mbox_valid_val(mbox)) {
     msg = (struct tcpip_msg *)memp_malloc(MEMP_TCPIP_MSG_API);
     if (msg == NULL) {
       return ERR_MEM;
@@ -276,7 +312,7 @@ tcpip_timeout(u32_t msecs, sys_timeout_handler h, void *arg)
 {
   struct tcpip_msg *msg;
 
-  if (sys_mbox_valid(&mbox)) {
+  if (sys_mbox_valid_val(mbox)) {
     msg = (struct tcpip_msg *)memp_malloc(MEMP_TCPIP_MSG_API);
     if (msg == NULL) {
       return ERR_MEM;
@@ -305,7 +341,7 @@ tcpip_untimeout(sys_timeout_handler h, void *arg)
 {
   struct tcpip_msg *msg;
 
-  if (sys_mbox_valid(&mbox)) {
+  if (sys_mbox_valid_val(mbox)) {
     msg = (struct tcpip_msg *)memp_malloc(MEMP_TCPIP_MSG_API);
     if (msg == NULL) {
       return ERR_MEM;
@@ -339,7 +375,7 @@ tcpip_apimsg(struct api_msg *apimsg)
   apimsg->msg.err = ERR_VAL;
 #endif
   
-  if (sys_mbox_valid(&mbox)) {
+  if (sys_mbox_valid_val(mbox)) {
     TCPIP_MSG_VAR_ALLOC(msg);
     TCPIP_MSG_VAR_REF(msg).type = TCPIP_MSG_API;
     TCPIP_MSG_VAR_REF(msg).msg.apimsg = apimsg;
@@ -372,7 +408,7 @@ tcpip_netifapi(struct netifapi_msg* netifapimsg)
 {
   TCPIP_MSG_VAR_DECLARE(msg);
 
-  if (sys_mbox_valid(&mbox)) {
+  if (sys_mbox_valid_val(mbox)) {
     err_t err;
     TCPIP_MSG_VAR_ALLOC(msg);
 
@@ -426,7 +462,7 @@ tcpip_pppapi(struct pppapi_msg* pppapimsg)
 {
   struct tcpip_msg msg;
 
-  if (sys_mbox_valid(&mbox)) {
+  if (sys_mbox_valid_val(mbox)) {
     err_t err = sys_sem_new(&pppapimsg->msg.sem, 0);
     if (err != ERR_OK) {
       pppapimsg->msg.err = err;
@@ -502,7 +538,7 @@ void tcpip_callbackmsg_delete(struct tcpip_callback_msg* msg)
 err_t
 tcpip_trycallback(struct tcpip_callback_msg* msg)
 {
-  if (!sys_mbox_valid(&mbox)) {
+  if (!sys_mbox_valid_val(mbox)) {
     return ERR_VAL;
   }
   return sys_mbox_trypost(&mbox, msg);

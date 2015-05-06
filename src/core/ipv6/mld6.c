@@ -342,7 +342,8 @@ mld6_joingroup(const ip6_addr_t *srcaddr, const ip6_addr_t *groupaddr)
     }
     else {
       for (i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
-        if (ip6_addr_cmp(srcaddr, netif_ip6_addr(netif, i))) {
+        if (!ip6_addr_isinvalid(netif_ip6_addr_state(netif, i)) &&
+            ip6_addr_cmp(srcaddr, netif_ip6_addr(netif, i))) {
           match = 1;
           break;
         }
@@ -409,7 +410,8 @@ mld6_leavegroup(const ip6_addr_t *srcaddr, const ip6_addr_t *groupaddr)
     }
     else {
       for (i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
-        if (ip6_addr_cmp(srcaddr, netif_ip6_addr(netif, i))) {
+        if (!ip6_addr_isinvalid(netif_ip6_addr_state(netif, i)) &&
+            ip6_addr_cmp(srcaddr, netif_ip6_addr(netif, i))) {
           match = 1;
           break;
         }
@@ -525,7 +527,7 @@ mld6_send(struct mld_group *group, u8_t type)
 {
   struct mld_header * mld_hdr;
   struct pbuf * p;
-  ip6_addr_t * src_addr;
+  const ip6_addr_t * src_addr;
 
   /* Allocate a packet. Size is MLD header + IPv6 Hop-by-hop options header. */
   p = pbuf_alloc(PBUF_IP, sizeof(struct mld_header) + sizeof(struct ip6_hbh_hdr), PBUF_RAM);
@@ -549,7 +551,7 @@ mld6_send(struct mld_group *group, u8_t type)
   if (!ip6_addr_isvalid(netif_ip6_addr_state(group->netif, 0))) {
     /* This is a special case, when we are performing duplicate address detection.
      * We must join the multicast group, but we don't have a valid address yet. */
-    src_addr = IP6_ADDR_ANY;
+    src_addr = IP6_ADDR_ANY6;
   } else {
     /* Use link-local address as source address. */
     src_addr = netif_ip6_addr(group->netif, 0);

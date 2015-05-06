@@ -58,7 +58,7 @@ enum {
 /*
  * Extended asyncmap - allows any character to be escaped.
  */
-typedef u_char ext_accm[32];
+typedef u8_t ext_accm[32];
 
 /*
  * PPPoS interface control block.
@@ -71,17 +71,20 @@ struct pppos_pcb_s {
 
   /* -- below are data that will be cleared between two sessions
    *
-   * out_accm must be the first member of cleared members, because it is
+   * last_xmit must be the first member of cleared members, because it is
    * used to know which part must not be cleared.
    */
+  u32_t last_xmit;                 /* Time of last transmission. */
   ext_accm out_accm;               /* Async-Ctl-Char-Map for output. */
+
+  /* flags */
+  unsigned int open            :1; /* Set if PPPoS is open */
+  unsigned int pcomp           :1; /* Does peer accept protocol compression? */
+  unsigned int accomp          :1; /* Does peer accept addr/ctl compression? */
 
   /* PPPoS rx */
   ext_accm in_accm;                /* Async-Ctl-Char-Map for input. */
   struct pbuf *in_head, *in_tail;  /* The input packet. */
-#if VJ_SUPPORT
-  struct vjcompress vj_comp;       /* Van Jacobson compression header. */
-#endif /* VJ_SUPPORT */
   u16_t in_protocol;               /* The input protocol code. */
   u16_t in_fcs;                    /* Input Frame Check Sequence value. */
   u8_t in_state;                   /* The input process state. */
@@ -92,8 +95,22 @@ struct pppos_pcb_s {
 ppp_pcb *pppos_create(struct netif *pppif, sio_fd_t fd,
        ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
 
+#if !NO_SYS && !PPP_INPROC_IRQ_SAFE
+/* Pass received raw characters to PPPoS to be decoded through lwIP TCPIP thread. */
+err_t pppos_input_tcpip(ppp_pcb *ppp, u8_t *s, int l);
+#endif /* !NO_SYS && !PPP_INPROC_IRQ_SAFE */
+
 /* PPP over Serial: this is the input function to be called for received data. */
-void pppos_input(ppp_pcb *ppp, u_char* data, int len);
+void pppos_input(ppp_pcb *ppp, u8_t* data, int len);
+
+
+/*
+ * Functions called from lwIP
+ * DO NOT CALL FROM lwIP USER APPLICATION.
+ */
+#if !NO_SYS && !PPP_INPROC_IRQ_SAFE
+err_t pppos_input_sys(struct pbuf *p, struct netif *inp);
+#endif /* !NO_SYS && !PPP_INPROC_IRQ_SAFE */
 
 #endif /* PPPOS_H */
 #endif /* PPP_SUPPORT && PPPOL2TP_SUPPORT */

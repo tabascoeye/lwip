@@ -369,6 +369,7 @@ static err_t lwip_tx_func(struct netif *netif, struct pbuf *p)
     case 3:
     case 4:
     case 5:
+    case 6:
       {
         const u8_t arpproto[] = { 0x08, 0x06 };
 
@@ -378,7 +379,7 @@ static err_t lwip_tx_func(struct netif *netif, struct pbuf *p)
         check_pkt(p, 12, arpproto, sizeof(arpproto)); /* eth level proto: ip */
         break;
       }
-    case 6:
+    case 7:
       {
         const u8_t fake_arp[6] = { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xab };
         const u8_t ipproto[] = { 0x08, 0x00 };
@@ -419,9 +420,9 @@ static err_t lwip_tx_func(struct netif *netif, struct pbuf *p)
  */
 START_TEST(test_dhcp)
 {
-  struct ip_addr addr;
-  struct ip_addr netmask;
-  struct ip_addr gw;
+  ip4_addr_t addr;
+  ip4_addr_t netmask;
+  ip4_addr_t gw;
   int i;
   u32_t xid;
   LWIP_UNUSED_ARG(_i);
@@ -434,6 +435,7 @@ START_TEST(test_dhcp)
   IP4_ADDR(&gw, 0, 0, 0, 0);
 
   netif_add(&net_test, &addr, &netmask, &gw, &net_test, testif_init, ethernet_input);
+  netif_set_up(&net_test);
 
   dhcp_start(&net_test);
 
@@ -442,13 +444,10 @@ START_TEST(test_dhcp)
   memcpy(&dhcp_offer[46], &xid, 4);
   send_pkt(&net_test, dhcp_offer, sizeof(dhcp_offer));
 
-  /* Interface down */
-  fail_if(netif_is_up(&net_test));
-
   /* IP addresses should be zero */
-  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(struct ip_addr)));
-  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(struct ip_addr)));
-  fail_if(memcmp(&gw, &net_test.gw, sizeof(struct ip_addr)));
+  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&gw, &net_test.gw, sizeof(ip4_addr_t)));
 
   fail_unless(txpacket == 1, "TX %d packets, expected 1", txpacket); /* Nothing more sent */
   xid = htonl(net_test.dhcp->xid);
@@ -468,7 +467,7 @@ START_TEST(test_dhcp)
   for (i = 0; i < 20; i++) {
     tick_lwip();
   }
-  fail_unless(txpacket == 4, "TX %d packets, expected 4", txpacket); /* ARP requests sent */
+  fail_unless(txpacket == 5, "TX %d packets, expected 5", txpacket); /* ARP requests sent */
 
   /* Interface up */
   fail_unless(netif_is_up(&net_test));
@@ -477,9 +476,9 @@ START_TEST(test_dhcp)
   IP4_ADDR(&addr, 195, 170, 189, 200);
   IP4_ADDR(&netmask, 255, 255, 255, 0);
   IP4_ADDR(&gw, 195, 170, 189, 171);
-  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(struct ip_addr)));
-  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(struct ip_addr)));
-  fail_if(memcmp(&gw, &net_test.gw, sizeof(struct ip_addr)));
+  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&gw, &net_test.gw, sizeof(ip4_addr_t)));
 
   netif_remove(&net_test);
 }
@@ -491,9 +490,9 @@ END_TEST
  */
 START_TEST(test_dhcp_nak)
 {
-  struct ip_addr addr;
-  struct ip_addr netmask;
-  struct ip_addr gw;
+  ip4_addr_t addr;
+  ip4_addr_t netmask;
+  ip4_addr_t gw;
   u32_t xid;
   LWIP_UNUSED_ARG(_i);
 
@@ -505,6 +504,7 @@ START_TEST(test_dhcp_nak)
   IP4_ADDR(&gw, 0, 0, 0, 0);
 
   netif_add(&net_test, &addr, &netmask, &gw, &net_test, testif_init, ethernet_input);
+  netif_set_up(&net_test);
 
   dhcp_start(&net_test);
 
@@ -513,13 +513,10 @@ START_TEST(test_dhcp_nak)
   memcpy(&dhcp_offer[46], &xid, 4);
   send_pkt(&net_test, dhcp_offer, sizeof(dhcp_offer));
 
-  /* Interface down */
-  fail_if(netif_is_up(&net_test));
-
   /* IP addresses should be zero */
-  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(struct ip_addr)));
-  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(struct ip_addr)));
-  fail_if(memcmp(&gw, &net_test.gw, sizeof(struct ip_addr)));
+  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&gw, &net_test.gw, sizeof(ip4_addr_t)));
 
   fail_unless(txpacket == 1); /* Nothing more sent */
   xid = htonl(net_test.dhcp->xid);
@@ -710,9 +707,9 @@ START_TEST(test_dhcp_relayed)
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00 };
 
-  struct ip_addr addr;
-  struct ip_addr netmask;
-  struct ip_addr gw;
+  ip4_addr_t addr;
+  ip4_addr_t netmask;
+  ip4_addr_t gw;
   int i;
   u32_t xid;
   LWIP_UNUSED_ARG(_i);
@@ -725,18 +722,16 @@ START_TEST(test_dhcp_relayed)
   IP4_ADDR(&gw, 0, 0, 0, 0);
 
   netif_add(&net_test, &addr, &netmask, &gw, &net_test, testif_init, ethernet_input);
+  netif_set_up(&net_test);
 
   dhcp_start(&net_test);
 
   fail_unless(txpacket == 1); /* DHCP discover sent */
 
-  /* Interface down */
-  fail_if(netif_is_up(&net_test));
-
   /* IP addresses should be zero */
-  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(struct ip_addr)));
-  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(struct ip_addr)));
-  fail_if(memcmp(&gw, &net_test.gw, sizeof(struct ip_addr)));
+  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&gw, &net_test.gw, sizeof(ip4_addr_t)));
 
   fail_unless(txpacket == 1); /* Nothing more sent */
   xid = htonl(net_test.dhcp->xid);
@@ -752,7 +747,7 @@ START_TEST(test_dhcp_relayed)
   for (i = 0; i < 25; i++) {
     tick_lwip();
   }
-  fail_unless(txpacket == 4, "txpkt should be 5, is %d", txpacket); /* ARP requests sent */
+  fail_unless(txpacket == 5, "txpkt should be 5, is %d", txpacket); /* ARP requests sent */
 
   /* Interface up */
   fail_unless(netif_is_up(&net_test));
@@ -761,24 +756,24 @@ START_TEST(test_dhcp_relayed)
   IP4_ADDR(&addr, 79, 138, 51, 5);
   IP4_ADDR(&netmask, 255, 255, 254, 0);
   IP4_ADDR(&gw, 79, 138, 50, 1);
-  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(struct ip_addr)));
-  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(struct ip_addr)));
-  fail_if(memcmp(&gw, &net_test.gw, sizeof(struct ip_addr)));
+  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&gw, &net_test.gw, sizeof(ip4_addr_t)));
 
-  fail_unless(txpacket == 4, "txpacket = %d", txpacket);
+  fail_unless(txpacket == 5, "txpacket = %d", txpacket);
 
   for (i = 0; i < 108000 - 25; i++) {
     tick_lwip();
   }
 
   fail_unless(netif_is_up(&net_test));
-  fail_unless(txpacket == 5, "txpacket = %d", txpacket);
+  fail_unless(txpacket == 6, "txpacket = %d", txpacket);
 
   /* We need to send arp response here.. */
 
   send_pkt(&net_test, arp_resp, sizeof(arp_resp));
 
-  fail_unless(txpacket == 6, "txpacket = %d", txpacket);
+  fail_unless(txpacket == 7, "txpacket = %d", txpacket);
   fail_unless(netif_is_up(&net_test));
 
   xid = htonl(net_test.dhcp->xid); /* xid updated */
@@ -789,7 +784,7 @@ START_TEST(test_dhcp_relayed)
     tick_lwip();
   }
 
-  fail_unless(txpacket == 6, "txpacket = %d", txpacket);
+  fail_unless(txpacket == 7, "txpacket = %d", txpacket);
 
   netif_remove(&net_test);
 
@@ -798,9 +793,9 @@ END_TEST
 
 START_TEST(test_dhcp_nak_no_endmarker)
 {
-  struct ip_addr addr;
-  struct ip_addr netmask;
-  struct ip_addr gw;
+  ip4_addr_t addr;
+  ip4_addr_t netmask;
+  ip4_addr_t gw;
 
   u8_t dhcp_nack_no_endmarker[] = {
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x54, 0x75,
@@ -865,6 +860,7 @@ START_TEST(test_dhcp_nak_no_endmarker)
   IP4_ADDR(&gw, 0, 0, 0, 0);
 
   netif_add(&net_test, &addr, &netmask, &gw, &net_test, testif_init, ethernet_input);
+  netif_set_up(&net_test);
 
   dhcp_start(&net_test);
 
@@ -873,13 +869,10 @@ START_TEST(test_dhcp_nak_no_endmarker)
   memcpy(&dhcp_offer[46], &xid, 4);
   send_pkt(&net_test, dhcp_offer, sizeof(dhcp_offer));
 
-  /* Interface down */
-  fail_if(netif_is_up(&net_test));
-
   /* IP addresses should be zero */
-  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(struct ip_addr)));
-  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(struct ip_addr)));
-  fail_if(memcmp(&gw, &net_test.gw, sizeof(struct ip_addr)));
+  fail_if(memcmp(&addr, &net_test.ip_addr, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&netmask, &net_test.netmask, sizeof(ip4_addr_t)));
+  fail_if(memcmp(&gw, &net_test.gw, sizeof(ip4_addr_t)));
 
   fail_unless(txpacket == 1); /* Nothing more sent */
   xid = htonl(net_test.dhcp->xid);
