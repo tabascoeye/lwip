@@ -962,17 +962,9 @@ void mib2_remove_ip4(struct netif *ni)
       del_rn[del_cnt] = ipa_rn;
       del_n[del_cnt] = ipa_n;
       del_cnt++;
-<<<<<<< HEAD
-      ipa_rn = (struct mib_list_rootnode*)(ipa_n->nptr);
-    }
-    else if (fc == 2)
-    {
-      /* reset delete (2 or more children) */
-=======
       ipa_rn = (struct mib_list_rootnode*)(void*)ipa_n->nptr;
     } else if (fc == 2) {
       /* reset delete (2 or more childs) */
->>>>>>> affc6d61ca7915c1dfe8a4421251875428ad5e0a
       del_cnt = 0;
       ipa_rn = (struct mib_list_rootnode*)(void*)ipa_n->nptr;
     }
@@ -1110,17 +1102,9 @@ void mib2_remove_route_ip4(u8_t dflt, struct netif *ni)
         del_rn[del_cnt] = iprte_rn;
         del_n[del_cnt] = iprte_n;
         del_cnt++;
-<<<<<<< HEAD
-        iprte_rn = (struct mib_list_rootnode*)(iprte_n->nptr);
-      }
-      else if (fc == 2)
-      {
-        /* reset delete (2 or more children) */
-=======
         iprte_rn = (struct mib_list_rootnode*)(void*)iprte_n->nptr;
       } else if (fc == 2) {
         /* reset delete (2 or more childs) */
->>>>>>> affc6d61ca7915c1dfe8a4421251875428ad5e0a
         del_cnt = 0;
         iprte_rn = (struct mib_list_rootnode*)(void*)iprte_n->nptr;
       }
@@ -1241,17 +1225,9 @@ void mib2_udp_unbind(struct udp_pcb *pcb)
         del_rn[del_cnt] = udp_rn;
         del_n[del_cnt] = udp_n;
         del_cnt++;
-<<<<<<< HEAD
-        udp_rn = (struct mib_list_rootnode*)(udp_n->nptr);
-      }
-      else if (fc == 2)
-      {
-        /* reset delete (2 or more children) */
-=======
         udp_rn = (struct mib_list_rootnode*)(void*)udp_n->nptr;
       } else if (fc == 2) {
         /* reset delete (2 or more childs) */
->>>>>>> affc6d61ca7915c1dfe8a4421251875428ad5e0a
         del_cnt = 0;
         udp_rn = (struct mib_list_rootnode*)(void*)udp_n->nptr;
       }
