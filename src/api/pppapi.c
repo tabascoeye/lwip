@@ -36,7 +36,7 @@
 #if LWIP_PPP_API /* don't build if not configured for use in lwipopts.h */
 
 #include "lwip/pppapi.h"
-#include "lwip/tcpip.h"
+#include "lwip/priv/tcpip_priv.h"
 #include "netif/ppp/pppoe.h"
 #include "netif/ppp/pppol2tp.h"
 #include "netif/ppp/pppos.h"
@@ -127,7 +127,7 @@ pppapi_set_notify_phase_callback(ppp_pcb *pcb, ppp_notify_phase_cb_fn notify_pha
 static void
 pppapi_do_pppos_create(struct pppapi_msg_msg *msg)
 {
-  msg->ppp = pppos_create(msg->msg.serialcreate.pppif, msg->msg.serialcreate.fd,
+  msg->ppp = pppos_create(msg->msg.serialcreate.pppif, msg->msg.serialcreate.output_cb,
     msg->msg.serialcreate.link_status_cb, msg->msg.serialcreate.ctx_cb);
   TCPIP_PPPAPI_ACK(msg);
 }
@@ -137,13 +137,13 @@ pppapi_do_pppos_create(struct pppapi_msg_msg *msg)
  * tcpip_thread context.
  */
 ppp_pcb*
-pppapi_pppos_create(struct netif *pppif, sio_fd_t fd, ppp_link_status_cb_fn link_status_cb,
-                          void *ctx_cb)
+pppapi_pppos_create(struct netif *pppif, pppos_output_cb_fn output_cb,
+               ppp_link_status_cb_fn link_status_cb, void *ctx_cb)
 {
   struct pppapi_msg msg;
   msg.function = pppapi_do_pppos_create;
   msg.msg.msg.serialcreate.pppif = pppif;
-  msg.msg.msg.serialcreate.fd = fd;
+  msg.msg.msg.serialcreate.output_cb = output_cb;
   msg.msg.msg.serialcreate.link_status_cb = link_status_cb;
   msg.msg.msg.serialcreate.ctx_cb = ctx_cb;
   TCPIP_PPPAPI(&msg);
@@ -214,7 +214,7 @@ pppapi_do_pppol2tp_create(struct pppapi_msg_msg *msg)
  */
 ppp_pcb*
 pppapi_pppol2tp_create(struct netif *pppif, struct netif *netif, ip_addr_t *ipaddr, u16_t port,
-                        u8_t *secret, u8_t secret_len,
+                        const u8_t *secret, u8_t secret_len,
                         ppp_link_status_cb_fn link_status_cb, void *ctx_cb)
 {
   struct pppapi_msg msg;

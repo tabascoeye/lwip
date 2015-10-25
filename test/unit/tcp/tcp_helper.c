@@ -1,6 +1,6 @@
 #include "tcp_helper.h"
 
-#include "lwip/tcp_impl.h"
+#include "lwip/priv/tcp_priv.h"
 #include "lwip/stats.h"
 #include "lwip/pbuf.h"
 #include "lwip/inet_chksum.h"
@@ -47,6 +47,7 @@ tcp_create_segment_wnd(ip_addr_t* src_ip, ip_addr_t* dst_ip,
   struct ip_hdr* iphdr;
   struct tcp_hdr* tcphdr;
   u16_t pbuf_len = (u16_t)(sizeof(struct ip_hdr) + sizeof(struct tcp_hdr) + data_len);
+  LWIP_ASSERT("data_len too big", data_len <= 0xFFFF);
 
   p = pbuf_alloc(PBUF_RAW, pbuf_len, PBUF_POOL);
   EXPECT_RETNULL(p != NULL);
@@ -86,7 +87,7 @@ tcp_create_segment_wnd(ip_addr_t* src_ip, ip_addr_t* dst_ip,
     /* let p point to TCP data */
     pbuf_header(p, -(s16_t)sizeof(struct tcp_hdr));
     /* copy data */
-    pbuf_take(p, data, data_len);
+    pbuf_take(p, data, (u16_t)data_len);
     /* let p point to TCP header again */
     pbuf_header(p, sizeof(struct tcp_hdr));
   }
@@ -243,7 +244,7 @@ void test_tcp_input(struct pbuf *p, struct netif *inp)
   ip_addr_copy_from_ip4(*ip_current_dest_addr(), iphdr->dest);
   ip_addr_copy_from_ip4(*ip_current_src_addr(), iphdr->src);
   ip_current_netif() = inp;
-  ip4_current_header() = iphdr;
+  ip_data.current_ip4_header = iphdr;
 
   /* since adding IPv6, p->payload must point to tcp header, not ip header */
   pbuf_header(p, -(s16_t)sizeof(struct ip_hdr));
@@ -253,7 +254,7 @@ void test_tcp_input(struct pbuf *p, struct netif *inp)
   ip_addr_set_zero(ip_current_dest_addr());
   ip_addr_set_zero(ip_current_src_addr());
   ip_current_netif() = NULL;
-  ip4_current_header() = NULL;
+  ip_data.current_ip4_header = NULL;
 }
 
 static err_t test_tcp_netif_output(struct netif *netif, struct pbuf *p,

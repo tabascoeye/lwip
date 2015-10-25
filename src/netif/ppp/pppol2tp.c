@@ -57,7 +57,7 @@
 #include "lwip/memp.h"
 #include "lwip/netif.h"
 #include "lwip/udp.h"
-#include "lwip/snmp.h"
+#include "lwip/snmp_mib2.h"
 
 #include "netif/ppp/ppp_impl.h"
 #include "netif/ppp/lcp.h"
@@ -107,7 +107,6 @@ static const struct link_callbacks pppol2tp_callbacks = {
   pppol2tp_write,
   pppol2tp_netif_output,
   NULL,
-  NULL,
   NULL
 };
 
@@ -115,7 +114,7 @@ static const struct link_callbacks pppol2tp_callbacks = {
 /* Create a new L2TP session. */
 ppp_pcb *pppol2tp_create(struct netif *pppif,
        struct netif *netif, ip_addr_t *ipaddr, u16_t port,
-       u8_t *secret, u8_t secret_len,
+       const u8_t *secret, u8_t secret_len,
        ppp_link_status_cb_fn link_status_cb, void *ctx_cb) {
   ppp_pcb *ppp;
   pppol2tp_pcb *l2tp;
@@ -125,14 +124,14 @@ ppp_pcb *pppol2tp_create(struct netif *pppif,
     goto ipaddr_check_failed;
   }
 
-  ppp = ppp_new(pppif, link_status_cb, ctx_cb);
-  if (ppp == NULL) {
-    goto ppp_new_failed;
-  }
-
   l2tp = (pppol2tp_pcb *)memp_malloc(MEMP_PPPOL2TP_PCB);
   if (l2tp == NULL) {
     goto memp_malloc_l2tp_failed;
+  }
+
+  ppp = ppp_new(pppif, &pppol2tp_callbacks, l2tp, link_status_cb, ctx_cb);
+  if (ppp == NULL) {
+    goto ppp_new_failed;
   }
 
 #if LWIP_IPV6
@@ -158,14 +157,13 @@ ppp_pcb *pppol2tp_create(struct netif *pppif,
   l2tp->secret_len = secret_len;
 #endif /* PPPOL2TP_AUTH_SUPPORT */
 
-  ppp_link_set_callbacks(ppp, &pppol2tp_callbacks, l2tp);
   return ppp;
 
 udp_new_failed:
-  memp_free(MEMP_PPPOL2TP_PCB, l2tp);
-memp_malloc_l2tp_failed:
   ppp_free(ppp);
 ppp_new_failed:
+  memp_free(MEMP_PPPOL2TP_PCB, l2tp);
+memp_malloc_l2tp_failed:
 ipaddr_check_failed:
   return NULL;
 }
@@ -175,36 +173,36 @@ static err_t pppol2tp_write(ppp_pcb *ppp, void *ctx, struct pbuf *p) {
   pppol2tp_pcb *l2tp = (pppol2tp_pcb *)ctx;
   struct pbuf *ph; /* UDP + L2TP header */
   err_t ret;
-#if LWIP_SNMP
+#if MIB2_STATS
   u16_t tot_len;
-#else /* LWIP_SNMP */
+#else /* MIB2_STATS */
   LWIP_UNUSED_ARG(ppp);
-#endif /* LWIP_SNMP */
+#endif /* MIB2_STATS */
 
   ph = pbuf_alloc(PBUF_TRANSPORT, (u16_t)(PPPOL2TP_OUTPUT_DATA_HEADER_LEN), PBUF_RAM);
   if(!ph) {
     LINK_STATS_INC(link.memerr);
     LINK_STATS_INC(link.proterr);
-    snmp_inc_ifoutdiscards(ppp->netif);
+    MIB2_STATS_NETIF_INC(ppp->netif, ifoutdiscards);
     pbuf_free(p);
     return ERR_MEM;
   }
 
   pbuf_header(ph, -(s16_t)PPPOL2TP_OUTPUT_DATA_HEADER_LEN); /* hide L2TP header */
   pbuf_cat(ph, p);
-#if LWIP_SNMP
+#if MIB2_STATS
   tot_len = ph->tot_len;
-#endif /* LWIP_SNMP */
+#endif /* MIB2_STATS */
 
   ret = pppol2tp_xmit(l2tp, ph);
   if (ret != ERR_OK) {
     LINK_STATS_INC(link.err);
-    snmp_inc_ifoutdiscards(ppp->netif);
+    MIB2_STATS_NETIF_INC(ppp->netif, ifoutdiscards);
     return ret;
   }
 
-  snmp_add_ifoutoctets(ppp->netif, (u16_t)tot_len);
-  snmp_inc_ifoutucastpkts(ppp->netif);
+  MIB2_STATS_NETIF_ADD(ppp->netif, ifoutoctets, (u16_t)tot_len);
+  MIB2_STATS_NETIF_INC(ppp->netif, ifoutucastpkts);
   LINK_STATS_INC(link.xmit);
   return ERR_OK;
 }
@@ -215,18 +213,18 @@ static err_t pppol2tp_netif_output(ppp_pcb *ppp, void *ctx, struct pbuf *p, u_sh
   struct pbuf *pb;
   u8_t *pl;
   err_t err;
-#if LWIP_SNMP
+#if MIB2_STATS
   u16_t tot_len;
-#else /* LWIP_SNMP */
+#else /* MIB2_STATS */
   LWIP_UNUSED_ARG(ppp);
-#endif /* LWIP_SNMP */
+#endif /* MIB2_STATS */
 
   /* @todo: try to use pbuf_header() here! */
   pb = pbuf_alloc(PBUF_TRANSPORT, PPPOL2TP_OUTPUT_DATA_HEADER_LEN + sizeof(protocol), PBUF_RAM);
   if(!pb) {
     LINK_STATS_INC(link.memerr);
     LINK_STATS_INC(link.proterr);
-    snmp_inc_ifoutdiscards(ppp->netif);
+    MIB2_STATS_NETIF_INC(ppp->netif, ifoutdiscards);
     return ERR_MEM;
   }
 
@@ -236,18 +234,18 @@ static err_t pppol2tp_netif_output(ppp_pcb *ppp, void *ctx, struct pbuf *p, u_sh
   PUTSHORT(protocol, pl);
 
   pbuf_chain(pb, p);
-#if LWIP_SNMP
+#if MIB2_STATS
   tot_len = pb->tot_len;
-#endif /* LWIP_SNMP */
+#endif /* MIB2_STATS */
 
   if( (err = pppol2tp_xmit(l2tp, pb)) != ERR_OK) {
     LINK_STATS_INC(link.err);
-    snmp_inc_ifoutdiscards(ppp->netif);
+    MIB2_STATS_NETIF_INC(ppp->netif, ifoutdiscards);
     return err;
   }
 
-  snmp_add_ifoutoctets(ppp->netif, tot_len);
-  snmp_inc_ifoutucastpkts(ppp->netif);
+  MIB2_STATS_NETIF_ADD(ppp->netif, ifoutoctets, tot_len);
+  MIB2_STATS_NETIF_INC(ppp->netif, ifoutucastpkts);
   LINK_STATS_INC(link.xmit);
   return ERR_OK;
 }
@@ -319,7 +317,7 @@ static err_t pppol2tp_connect(ppp_pcb *ppp, void *ctx) {
 #if PPPOL2TP_AUTH_SUPPORT
   /* Generate random vector */
   if (l2tp->secret != NULL) {
-    random_bytes(l2tp->secret_rv, sizeof(l2tp->secret_rv));
+    magic_random_bytes(l2tp->secret_rv, sizeof(l2tp->secret_rv));
   }
 #endif /* PPPOL2TP_AUTH_SUPPORT */
 

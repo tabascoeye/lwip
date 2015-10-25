@@ -1,6 +1,35 @@
-/** @file
+/*
+ * Copyright (c) 2001-2004 Leon Woestenberg <leon.woestenberg@gmx.net>
+ * Copyright (c) 2001-2004 Axon Digital Design B.V., The Netherlands.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ * This file is part of the lwIP TCP/IP stack.
+ *
+ * Author: Leon Woestenberg <leon.woestenberg@gmx.net>
+ *
  */
-
 #ifndef LWIP_HDR_DHCP_H
 #define LWIP_HDR_DHCP_H
 
@@ -16,11 +45,11 @@ extern "C" {
 #endif
 
 /** period (in seconds) of the application calling dhcp_coarse_tmr() */
-#define DHCP_COARSE_TIMER_SECS 60 
+#define DHCP_COARSE_TIMER_SECS 60
 /** period (in milliseconds) of the application calling dhcp_coarse_tmr() */
 #define DHCP_COARSE_TIMER_MSECS (DHCP_COARSE_TIMER_SECS * 1000UL)
 /** period (in milliseconds) of the application calling dhcp_fine_tmr() */
-#define DHCP_FINE_TIMER_MSECS 500 
+#define DHCP_FINE_TIMER_MSECS 500
 
 #define DHCP_CHADDR_LEN 16U
 #define DHCP_SNAME_LEN  64U
@@ -28,9 +57,9 @@ extern "C" {
 
 struct dhcp
 {
-  /** transaction identifier of last sent request */ 
+  /** transaction identifier of last sent request */
   u32_t xid;
-  /** our connection to the DHCP server */ 
+  /** our connection to the DHCP server */
   struct udp_pcb *pcb;
   /** incoming msg */
   struct dhcp_msg *msg_in;
@@ -57,7 +86,7 @@ struct dhcp
   ip4_addr_t offered_ip_addr;
   ip4_addr_t offered_sn_mask;
   ip4_addr_t offered_gw_addr;
- 
+
   u32_t offered_t0_lease; /* lease period (in seconds) */
   u32_t offered_t1_renew; /* recommended renew time (usually 50% of lease period) */
   u32_t offered_t2_rebind; /* recommended rebind time (usually 87.5 of lease period)  */
@@ -136,7 +165,7 @@ u8_t dhcp_supplied_address(struct netif *netif);
 void dhcp_coarse_tmr(void);
 /** to be called every half second */
 void dhcp_fine_tmr(void);
- 
+
 /** DHCP message item offsets and length */
 #define DHCP_OP_OFS       0
 #define DHCP_HTYPE_OFS    1
@@ -157,28 +186,28 @@ void dhcp_fine_tmr(void);
 #define DHCP_COOKIE_OFS   DHCP_MSG_LEN
 #define DHCP_OPTIONS_OFS  (DHCP_MSG_LEN + 4)
 
-#define DHCP_CLIENT_PORT  68  
+#define DHCP_CLIENT_PORT  68
 #define DHCP_SERVER_PORT  67
 
 /** DHCP client states */
-#define DHCP_OFF          0
-#define DHCP_REQUESTING   1
-#define DHCP_INIT         2
-#define DHCP_REBOOTING    3
-#define DHCP_REBINDING    4
-#define DHCP_RENEWING     5
-#define DHCP_SELECTING    6
-#define DHCP_INFORMING    7
-#define DHCP_CHECKING     8
-#define DHCP_PERMANENT    9
-#define DHCP_BOUND        10
-/** not yet implemented #define DHCP_RELEASING 11 */
-#define DHCP_BACKING_OFF  12
+#define DHCP_STATE_OFF          0
+#define DHCP_STATE_REQUESTING   1
+#define DHCP_STATE_INIT         2
+#define DHCP_STATE_REBOOTING    3
+#define DHCP_STATE_REBINDING    4
+#define DHCP_STATE_RENEWING     5
+#define DHCP_STATE_SELECTING    6
+#define DHCP_STATE_INFORMING    7
+#define DHCP_STATE_CHECKING     8
+/** not yet implemented #define DHCP_STATE_PERMANENT 9 */
+#define DHCP_STATE_BOUND        10
+/** not yet implemented #define DHCP_STATE_RELEASING 11 */
+#define DHCP_STATE_BACKING_OFF  12
 
 /** AUTOIP cooperation flags */
 #define DHCP_AUTOIP_COOP_STATE_OFF  0
 #define DHCP_AUTOIP_COOP_STATE_ON   1
- 
+
 #define DHCP_BOOTREQUEST  1
 #define DHCP_BOOTREPLY    2
 
@@ -203,7 +232,7 @@ void dhcp_fine_tmr(void);
 #define DHCP_OPTION_PAD 0
 #define DHCP_OPTION_SUBNET_MASK 1 /* RFC 2132 3.3 */
 #define DHCP_OPTION_ROUTER 3
-#define DHCP_OPTION_DNS_SERVER 6 
+#define DHCP_OPTION_DNS_SERVER 6
 #define DHCP_OPTION_HOSTNAME 12
 #define DHCP_OPTION_IP_TTL 23
 #define DHCP_OPTION_MTU 26

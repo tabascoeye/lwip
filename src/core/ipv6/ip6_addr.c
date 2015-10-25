@@ -6,9 +6,9 @@
 
 /*
  * Copyright (c) 2010 Inico Technologies Ltd.
- * All rights reserved. 
- * 
- * Redistribution and use in source and binary forms, with or without modification, 
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
  *
  * 1. Redistributions of source code must retain the above copyright notice,
@@ -17,21 +17,21 @@
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
  * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission. 
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED 
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT 
- * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
- * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
  * OF SUCH DAMAGE.
  *
  * This file is part of the lwIP TCP/IP stack.
- * 
+ *
  * Author: Ivan Delamer <delamer@inicotech.com>
  *
  * Functions for handling IPv6 addresses.
@@ -79,10 +79,11 @@ ip6addr_aton(const char *cp, ip6_addr_t *addr)
      zero_blocks may be 1 even if there are no :: sequences */
   zero_blocks = 8;
   for (s = cp; *s != 0; s++) {
-    if (*s == ':')
+    if (*s == ':') {
       zero_blocks--;
-    else if (!isxdigit(*s))
+    } else if (!isxdigit(*s)) {
       break;
+    }
   }
 
   /* parse each block */
@@ -106,14 +107,17 @@ ip6addr_aton(const char *cp, ip6_addr_t *addr)
         return 0;
       }
       if (s[1] == ':') {
+        if (s[2] == ':') {
+          /* invalid format: three successive colons */
+          return 0;
+        }
         s++;
         /* "::" found, set zeros */
         while (zero_blocks > 0) {
           zero_blocks--;
           if (current_block_index & 0x1) {
             addr_index++;
-          }
-          else {
+          } else {
             if (addr) {
               addr->addr[addr_index] = 0;
             }
@@ -206,7 +210,9 @@ ip6addr_ntoa_r(const ip6_addr_t *addr, char *buf, int buflen)
       if (current_block_index == 7) {
         /* special case, we must render a ':' for the last block. */
         buf[i++] = ':';
-        if (i >= buflen) return NULL;
+        if (i >= buflen) {
+          return NULL;
+        }
         break;
       }
       if (empty_block_flag == 0) {
@@ -220,41 +226,45 @@ ip6addr_ntoa_r(const ip6_addr_t *addr, char *buf, int buflen)
         if (next_block_value == 0) {
           empty_block_flag = 1;
           buf[i++] = ':';
-          if (i >= buflen) return NULL;
+          if (i >= buflen) {
+            return NULL;
+          }
           continue; /* move on to next block. */
         }
-      }
-      else if (empty_block_flag == 1) {
+      } else if (empty_block_flag == 1) {
         /* move on to next block. */
         continue;
       }
-    }
-    else if (empty_block_flag == 1) {
+    } else if (empty_block_flag == 1) {
       /* Set this flag value so we don't produce multiple empty blocks. */
       empty_block_flag = 2;
     }
 
     if (current_block_index > 0) {
       buf[i++] = ':';
-      if (i >= buflen) return NULL;
+      if (i >= buflen) {
+        return NULL;
+      }
     }
 
     if ((current_block_value & 0xf000) == 0) {
       zero_flag = 1;
-    }
-    else {
+    } else {
       buf[i++] = xchar(((current_block_value & 0xf000) >> 12));
       zero_flag = 0;
-      if (i >= buflen) return NULL;
+      if (i >= buflen) {
+        return NULL;
+      }
     }
 
     if (((current_block_value & 0xf00) == 0) && (zero_flag)) {
       /* do nothing */
-    }
-    else {
+    } else {
       buf[i++] = xchar(((current_block_value & 0xf00) >> 8));
       zero_flag = 0;
-      if (i >= buflen) return NULL;
+      if (i >= buflen) {
+        return NULL;
+      }
     }
 
     if (((current_block_value & 0xf0) == 0) && (zero_flag)) {
@@ -263,11 +273,15 @@ ip6addr_ntoa_r(const ip6_addr_t *addr, char *buf, int buflen)
     else {
       buf[i++] = xchar(((current_block_value & 0xf0) >> 4));
       zero_flag = 0;
-      if (i >= buflen) return NULL;
+      if (i >= buflen) {
+        return NULL;
+      }
     }
 
     buf[i++] = xchar((current_block_value & 0xf));
-    if (i >= buflen) return NULL;
+    if (i >= buflen) {
+      return NULL;
+    }
   }
 
   buf[i] = 0;
@@ -276,20 +290,6 @@ ip6addr_ntoa_r(const ip6_addr_t *addr, char *buf, int buflen)
 }
 
 #if LWIP_IPV4
-/** Convert IPv6 address to generic IP address.
- * Since source types do not contain the type field, a target storage needs to be supplied.
- */
-ip_addr_t*
-ip6_2_ip(const ip6_addr_t *ip6addr, ip_addr_t* storage)
-{
-  if ((ip6addr == NULL) || (storage == NULL)) {
-    return NULL;
-  }
-  ip6_addr_copy(storage->addr.ip6, *ip6addr);
-  IP_SET_TYPE_VAL(*storage, IPADDR_TYPE_V6);
-  return storage;
-}
-
 /** Convert IP address string (both versions) to numeric.
  * The version is auto-detected from the string.
  *
@@ -303,18 +303,18 @@ ipaddr_aton(const char *cp, ip_addr_t *addr)
   if (cp != NULL) {
     const char* c;
     for (c = cp; *c != 0; c++) {
-      if (*c == '.') {
-        /* contains a dot: IPv4 address */
-        if (addr) {
-          IP_SET_TYPE_VAL(*addr, IPADDR_TYPE_V4);
-        }
-        return ip4addr_aton(cp, ip_2_ip4(addr));
-      } else if (*c == ':') {
+      if (*c == ':') {
         /* contains a colon: IPv6 address */
         if (addr) {
           IP_SET_TYPE_VAL(*addr, IPADDR_TYPE_V6);
         }
         return ip6addr_aton(cp, ip_2_ip6(addr));
+      } else if (*c == '.') {
+        /* contains a dot: IPv4 address */
+        if (addr) {
+          IP_SET_TYPE_VAL(*addr, IPADDR_TYPE_V4);
+        }
+        return ip4addr_aton(cp, ip_2_ip4(addr));
       }
     }
     /* nothing found, call ip4addr_aton as fallback */

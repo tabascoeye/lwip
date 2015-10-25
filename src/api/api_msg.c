@@ -6,9 +6,9 @@
 
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
- * All rights reserved. 
- * 
- * Redistribution and use in source and binary forms, with or without modification, 
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
  *
  * 1. Redistributions of source code must retain the above copyright notice,
@@ -17,21 +17,21 @@
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
  * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission. 
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED 
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT 
- * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
- * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
  * OF SUCH DAMAGE.
  *
  * This file is part of the lwIP TCP/IP stack.
- * 
+ *
  * Author: Adam Dunkels <adam@sics.se>
  *
  */
@@ -40,7 +40,7 @@
 
 #if LWIP_NETCONN /* don't build if not configured for use in lwipopts.h */
 
-#include "lwip/api_msg.h"
+#include "lwip/priv/api_msg.h"
 
 #include "lwip/ip.h"
 #include "lwip/udp.h"
@@ -48,17 +48,17 @@
 #include "lwip/raw.h"
 
 #include "lwip/memp.h"
-#include "lwip/tcpip.h"
 #include "lwip/igmp.h"
 #include "lwip/dns.h"
 #include "lwip/mld6.h"
+#include "lwip/priv/tcpip_priv.h"
 
 #include <string.h>
 
 /* netconns are polled once per second (e.g. continue write on memory error) */
 #define NETCONN_TCP_POLL_INTERVAL 2
 
-#define SET_NONBLOCKING_CONNECT(conn, val)  do { if(val) { \
+#define SET_NONBLOCKING_CONNECT(conn, val)  do { if (val) { \
   (conn)->flags |= NETCONN_FLAG_IN_NONBLOCKING_CONNECT; \
 } else { \
   (conn)->flags &= ~ NETCONN_FLAG_IN_NONBLOCKING_CONNECT; }} while(0)
@@ -106,7 +106,7 @@ recv_raw(void *arg, struct raw_pcb *pcb, struct pbuf *p,
 #endif /* LWIP_SO_RCVBUF */
     /* copy the whole packet into new pbufs */
     q = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
-    if(q != NULL) {
+    if (q != NULL) {
       if (pbuf_copy(q, p) != ERR_OK) {
         pbuf_free(q);
         q = NULL;
@@ -350,7 +350,7 @@ sent_tcp(void *arg, struct tcp_pcb *pcb, u16_t len)
       API_EVENT(conn, NETCONN_EVT_SENDPLUS, len);
     }
   }
-  
+
   return ERR_OK;
 }
 
@@ -415,7 +415,7 @@ err_tcp(void *arg, err_t err)
       LWIP_ASSERT("conn->current_msg != NULL", conn->current_msg != NULL);
       conn->current_msg->err = err;
       op_completed_sem = LWIP_API_MSG_SEM(conn->current_msg);
-      LWIP_ASSERT("inavlid op_completed_sem", op_completed_sem != SYS_SEM_NULL);
+      LWIP_ASSERT("inavlid op_completed_sem", sys_sem_valid(op_completed_sem));
       conn->current_msg = NULL;
       /* wake up the waiting task */
       NETCONN_SET_SAFE_ERR(conn, err);
@@ -519,7 +519,7 @@ pcb_new(struct api_msg_msg *msg)
 #if LWIP_RAW
   case NETCONN_RAW:
     msg->conn->pcb.raw = raw_new(msg->msg.n.proto);
-    if(msg->conn->pcb.raw != NULL) {
+    if (msg->conn->pcb.raw != NULL) {
       raw_recv(msg->conn->pcb.raw, recv_raw, msg->conn);
     }
     break;
@@ -527,7 +527,7 @@ pcb_new(struct api_msg_msg *msg)
 #if LWIP_UDP
   case NETCONN_UDP:
     msg->conn->pcb.udp = udp_new();
-    if(msg->conn->pcb.udp != NULL) {
+    if (msg->conn->pcb.udp != NULL) {
 #if LWIP_UDPLITE
       if (NETCONNTYPE_ISUDPLITE(msg->conn->type)) {
         udp_setflags(msg->conn->pcb.udp, UDP_FLAGS_UDPLITE);
@@ -543,7 +543,7 @@ pcb_new(struct api_msg_msg *msg)
 #if LWIP_TCP
   case NETCONN_TCP:
     msg->conn->pcb.tcp = tcp_new();
-    if(msg->conn->pcb.tcp != NULL) {
+    if (msg->conn->pcb.tcp != NULL) {
       setup_tcp(msg->conn);
     }
     break;
@@ -725,7 +725,7 @@ netconn_drain(struct netconn *conn)
     while (sys_mbox_tryfetch(&conn->recvmbox, &mem) != SYS_MBOX_EMPTY) {
 #if LWIP_TCP
       if (NETCONNTYPE_GROUP(conn->type) == NETCONN_TCP) {
-        if(mem != NULL) {
+        if (mem != NULL) {
           p = (struct pbuf*)mem;
           /* pcb might be set to NULL already by err_tcp() */
           if (conn->pcb.tcp != NULL) {
@@ -878,7 +878,7 @@ lwip_netconn_do_close_internal(struct netconn *conn  WRITE_DELAYED_PARAM)
     }
 #endif /* LWIP_SO_LINGER */
   } else {
-    if(err == ERR_MEM) {
+    if (err == ERR_MEM) {
       /* Closing failed because of memory shortage */
       if (netconn_is_nonblocking(conn)) {
         /* Nonblocking close failed */
@@ -1358,7 +1358,7 @@ lwip_netconn_do_send(struct api_msg_msg *msg)
             msg->msg.b->flags & NETBUF_FLAG_CHKSUM, msg->msg.b->toport_chksum);
         }
 #else /* LWIP_CHECKSUM_ON_COPY */
-        if (ip_addr_isany(&msg->msg.b->addr)) {
+        if (ip_addr_isany_val(msg->msg.b->addr)) {
           msg->err = udp_send(msg->conn->pcb.udp, msg->msg.b->p);
         } else {
           msg->err = udp_sendto(msg->conn->pcb.udp, msg->msg.b->p, &msg->msg.b->addr, msg->msg.b->port);
@@ -1398,7 +1398,7 @@ lwip_netconn_do_recv(struct api_msg_msg *msg)
           u16_t recved = (remaining > 0xffff) ? 0xffff : (u16_t)remaining;
           tcp_recved(msg->conn->pcb.tcp, recved);
           remaining -= recved;
-        }while(remaining != 0);
+        } while (remaining != 0);
       }
     }
   }
@@ -1468,7 +1468,7 @@ lwip_netconn_do_writemore(struct netconn *conn  WRITE_DELAYED_PARAM)
     if (available < len) {
       /* don't try to write more than sendbuf */
       len = available;
-      if (dontblock) { 
+      if (dontblock) {
         if (!len) {
           err = ERR_WOULDBLOCK;
           goto err_mem;
@@ -1762,7 +1762,7 @@ lwip_netconn_do_close(struct api_msg_msg *msg)
  */
 void
 lwip_netconn_do_join_leave_group(struct api_msg_msg *msg)
-{ 
+{
   if (ERR_IS_FATAL(msg->conn->last_err)) {
     msg->err = msg->conn->last_err;
   } else {
@@ -1813,7 +1813,7 @@ lwip_netconn_do_join_leave_group(struct api_msg_msg *msg)
  * signaling the semaphore.
  */
 static void
-lwip_netconn_do_dns_found(const char *name, ip_addr_t *ipaddr, void *arg)
+lwip_netconn_do_dns_found(const char *name, const ip_addr_t *ipaddr, void *arg)
 {
   struct dns_api_msg *msg = (struct dns_api_msg*)arg;
 
@@ -1829,7 +1829,7 @@ lwip_netconn_do_dns_found(const char *name, ip_addr_t *ipaddr, void *arg)
     API_EXPR_DEREF(msg->addr) = *ipaddr;
   }
   /* wake up the application task waiting in netconn_gethostbyname */
-  sys_sem_signal(API_EXPR_REF(msg->sem));
+  sys_sem_signal(API_EXPR_REF_SEM(msg->sem));
 }
 
 /**
@@ -1842,12 +1842,19 @@ void
 lwip_netconn_do_gethostbyname(void *arg)
 {
   struct dns_api_msg *msg = (struct dns_api_msg*)arg;
+  u8_t addrtype =
+#if LWIP_IPV4 && LWIP_IPV6
+    msg->dns_addrtype;
+#else
+    LWIP_DNS_ADDRTYPE_DEFAULT;
+#endif
 
-  API_EXPR_DEREF(msg->err) = dns_gethostbyname(msg->name, API_EXPR_REF(msg->addr), lwip_netconn_do_dns_found, msg);
+  API_EXPR_DEREF(msg->err) = dns_gethostbyname_addrtype(msg->name,
+    API_EXPR_REF(msg->addr), lwip_netconn_do_dns_found, msg, addrtype);
   if (API_EXPR_DEREF(msg->err) != ERR_INPROGRESS) {
     /* on error or immediate success, wake up the application
      * task waiting in netconn_gethostbyname */
-    sys_sem_signal(API_EXPR_REF(msg->sem));
+    sys_sem_signal(API_EXPR_REF_SEM(msg->sem));
   }
 }
 #endif /* LWIP_DNS */

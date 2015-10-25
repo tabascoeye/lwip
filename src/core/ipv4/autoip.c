@@ -43,9 +43,9 @@
 
 /*******************************************************************************
  * USAGE:
- * 
+ *
  * define LWIP_AUTOIP 1  in your lwipopts.h
- * 
+ *
  * If you don't use tcpip.c (so, don't call, you don't call tcpip_init):
  * - First, call autoip_init().
  * - call autoip_tmr() all AUTOIP_TMR_INTERVAL msecs,
@@ -55,7 +55,7 @@
  *
  * Without DHCP:
  * - Call autoip_start() after netif_add().
- * 
+ *
  * With DHCP:
  * - define LWIP_DHCP_AUTOIP_COOP 1 in your lwipopts.h.
  * - Configure your DHCP Client.
@@ -202,7 +202,7 @@ autoip_create_addr(struct netif *netif, ip4_addr_t *ipaddr)
   u32_t addr = ntohl(LWIP_AUTOIP_CREATE_SEED_ADDR(netif));
   addr += netif->autoip->tried_llipaddr;
   addr = AUTOIP_NET | (addr & 0xffff);
-  /* Now, 169.254.0.0 <= addr <= 169.254.255.255 */ 
+  /* Now, 169.254.0.0 <= addr <= 169.254.255.255 */
 
   if (addr < AUTOIP_RANGE_START) {
     addr += AUTOIP_RANGE_END - AUTOIP_RANGE_START + 1;
@@ -213,7 +213,7 @@ autoip_create_addr(struct netif *netif, ip4_addr_t *ipaddr)
   LWIP_ASSERT("AUTOIP address not in range", (addr >= AUTOIP_RANGE_START) &&
     (addr <= AUTOIP_RANGE_END));
   ip4_addr_set_u32(ipaddr, htonl(addr));
-  
+
   LWIP_DEBUGF(AUTOIP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE,
     ("autoip_create_addr(): tried_llipaddr=%"U16_F", %"U16_F".%"U16_F".%"U16_F".%"U16_F"\n",
     (u16_t)(netif->autoip->tried_llipaddr), ip4_addr1_16(ipaddr), ip4_addr2_16(ipaddr),
@@ -373,7 +373,7 @@ autoip_stop(struct netif *netif)
 {
   if (netif->autoip) {
     netif->autoip->state = AUTOIP_STATE_OFF;
-    if (ip4_addr_islinklocal(&netif->ip_addr)) {
+    if (ip4_addr_islinklocal(netif_ip4_addr(netif))) {
       netif_set_addr(netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY);
     }
   }
@@ -456,6 +456,10 @@ autoip_tmr(void)
             }
           }
           break;
+
+        default:
+          /* nothing to do in other states */
+          break;
       }
     }
     /* proceed to next network interface */
@@ -488,7 +492,7 @@ autoip_arp_reply(struct netif *netif, struct etharp_hdr *hdr)
      */
     IPADDR2_COPY(&sipaddr, &hdr->sipaddr);
     IPADDR2_COPY(&dipaddr, &hdr->dipaddr);
-      
+
     if ((netif->autoip->state == AUTOIP_STATE_PROBING) ||
         ((netif->autoip->state == AUTOIP_STATE_ANNOUNCING) &&
          (netif->autoip->sent_num == 0))) {

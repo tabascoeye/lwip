@@ -73,7 +73,7 @@ static void ppp_logit(int level, const char *fmt, va_list args);
 static void ppp_log_write(int level, char *buf);
 #if PRINTPKT_SUPPORT
 static void ppp_vslp_printer(void *arg, const char *fmt, ...);
-static void ppp_format_packet(u_char *p, int len,
+static void ppp_format_packet(const u_char *p, int len,
 		void (*printer) (void *, const char *, ...), void *arg);
 
 struct buffer_info {
@@ -141,7 +141,7 @@ int ppp_vslprintf(char *buf, int buflen, const char *fmt, va_list args) {
     unsigned long val = 0;
     const char *f;
     char *str, *buf0;
-    unsigned char *p;
+    const unsigned char *p;
     char num[32];
 #if 0 /* need port */
     time_t t;
@@ -285,11 +285,11 @@ int ppp_vslprintf(char *buf, int buflen, const char *fmt, va_list args) {
 	    quoted = c == 'q';
 	    p = va_arg(args, unsigned char *);
 	    if (p == NULL)
-		p = (unsigned char *)"<NULL>";
+		p = (const unsigned char *)"<NULL>";
 	    if (fillch == '0' && prec >= 0) {
 		n = prec;
 	    } else {
-		n = strlen((char *)p);
+		n = strlen((const char *)p);
 		if (prec >= 0 && n > prec)
 		    n = prec;
 	    }
@@ -443,7 +443,7 @@ log_packet(p, len, prefix, level)
  * ppp_format_packet - make a readable representation of a packet,
  * calling `printer(arg, format, ...)' to output it.
  */
-static void ppp_format_packet(u_char *p, int len,
+static void ppp_format_packet(const u_char *p, int len,
 		void (*printer) (void *, const char *, ...), void *arg) {
     int i, n;
     u_short proto;
@@ -569,7 +569,7 @@ pr_log (void *arg, const char *fmt, ...)
  * ppp_print_string - print a readable representation of a string using
  * printer.
  */
-void ppp_print_string(char *p, int len, void (*printer) (void *, const char *, ...), void *arg) {
+void ppp_print_string(const u_char *p, int len, void (*printer) (void *, const char *, ...), void *arg) {
     int c;
 
     printer(arg, "\"");

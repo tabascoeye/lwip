@@ -35,6 +35,9 @@
 #include "lwip/sys.h"
 #include "lwip/netif.h"
 #include "netif/ppp/ppp.h"
+#if PPPOS_SUPPORT
+#include "netif/ppp/pppos.h"
+#endif /* PPPOS_SUPPORT */
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,7 +63,7 @@ struct pppapi_msg_msg {
 #if PPPOS_SUPPORT
     struct {
       struct netif *pppif;
-      sio_fd_t fd;
+      pppos_output_cb_fn output_cb;
       ppp_link_status_cb_fn link_status_cb;
       void *ctx_cb;
     } serialcreate;
@@ -82,7 +85,7 @@ struct pppapi_msg_msg {
       ip_addr_t *ipaddr;
       u16_t port;
 #if PPPOL2TP_AUTH_SUPPORT
-      u8_t *secret;
+      const u8_t *secret;
       u8_t secret_len;
 #endif /* PPPOL2TP_AUTH_SUPPORT */
       ppp_link_status_cb_fn link_status_cb;
@@ -119,7 +122,7 @@ void pppapi_set_auth(ppp_pcb *pcb, u8_t authtype, const char *user, const char *
 void pppapi_set_notify_phase_callback(ppp_pcb *pcb, ppp_notify_phase_cb_fn notify_phase_cb);
 #endif /* PPP_NOTIFY_PHASE */
 #if PPPOS_SUPPORT
-ppp_pcb *pppapi_pppos_create(struct netif *pppif, sio_fd_t fd, ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
+ppp_pcb *pppapi_pppos_create(struct netif *pppif, pppos_output_cb_fn output_cb, ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
 #endif /* PPPOS_SUPPORT */
 #if PPPOE_SUPPORT
 ppp_pcb *pppapi_pppoe_create(struct netif *pppif, struct netif *ethif, const char *service_name,
@@ -128,7 +131,7 @@ ppp_pcb *pppapi_pppoe_create(struct netif *pppif, struct netif *ethif, const cha
 #endif /* PPPOE_SUPPORT */
 #if PPPOL2TP_SUPPORT
 ppp_pcb *pppapi_pppol2tp_create(struct netif *pppif, struct netif *netif, ip_addr_t *ipaddr, u16_t port,
-                            u8_t *secret, u8_t secret_len,
+                            const u8_t *secret, u8_t secret_len,
                             ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
 #endif /* PPPOL2TP_SUPPORT */
 err_t pppapi_connect(ppp_pcb *pcb, u16_t holdoff);

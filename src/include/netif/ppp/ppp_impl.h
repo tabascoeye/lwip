@@ -30,12 +30,16 @@
 * 97-11-05 Guy Lancaster <glanca@gesn.com>, Global Election Systems Inc.
 *   Original derived from BSD codes.
 *****************************************************************************/
+#ifndef LWIP_HDR_PPP_IMPL_H
+#define LWIP_HDR_PPP_IMPL_H
 
 #include "lwip/opt.h"
+
 #if PPP_SUPPORT /* don't build if not configured for use in lwipopts.h */
 
-#ifndef PPP_IMP_H_
-#define PPP_IMP_H_
+#ifdef PPP_INCLUDE_SETTINGS_HEADER
+#include "ppp_settings.h"
+#endif
 
 #include <stdio.h> /* formats */
 #include <stdarg.h>
@@ -151,8 +155,6 @@ struct link_callbacks {
   void (*send_config)(ppp_pcb *pcb, void *ctx, u32_t accm, int pcomp, int accomp);
   /* confire the receive-side characteristics of the PPP interface */
   void (*recv_config)(ppp_pcb *pcb, void *ctx, u32_t accm, int pcomp, int accomp);
-  /* Get and set parameters for the given connection. */
-  err_t (*ioctl)(ppp_pcb *pcb, void *ctx, int cmd, void *arg);
 };
 
 /*
@@ -290,7 +292,7 @@ struct protent {
     void (*close) (ppp_pcb *pcb, const char *reason);
 #if PRINTPKT_SUPPORT
     /* Print a packet in readable form */
-    int  (*printpkt) (u_char *pkt, int len,
+    int  (*printpkt) (const u_char *pkt, int len,
 			  void (*printer) (void *, const char *, ...),
 			  void *arg);
 #endif /* PRINTPKT_SUPPORT */
@@ -389,10 +391,8 @@ int ppp_init(void);
  */
 
 /* Create a new PPP control block */
-ppp_pcb *ppp_new(struct netif *pppif, ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
-
-/* Set link callback functions */
-void ppp_link_set_callbacks(ppp_pcb *pcb, const struct link_callbacks *callbacks, void *ctx);
+ppp_pcb *ppp_new(struct netif *pppif, const struct link_callbacks *callbacks, void *link_ctx_cb,
+                 ppp_link_status_cb_fn link_status_cb, void *ctx_cb);
 
 /* Set a PPP PCB to its initial state */
 void ppp_clear(ppp_pcb *pcb);
@@ -611,7 +611,7 @@ int  str_to_epdisc (struct epdisc *, char *); /* endpt disc. from str */
 #endif
 
 /* Procedures exported from utils.c. */
-void ppp_print_string(char *p, int len, void (*printer) (void *, const char *, ...), void *arg);   /* Format a string for output */
+void ppp_print_string(const u_char *p, int len, void (*printer) (void *, const char *, ...), void *arg);   /* Format a string for output */
 int ppp_slprintf(char *buf, int buflen, const char *fmt, ...);            /* sprintf++ */
 int ppp_vslprintf(char *buf, int buflen, const char *fmt, va_list args);  /* vsprintf++ */
 size_t ppp_strlcpy(char *dest, const char *src, size_t len);        /* safe strcpy */
@@ -628,5 +628,5 @@ void ppp_dump_packet(const char *tag, unsigned char *p, int len);
 #endif /* PRINTPKT_SUPPORT */
 
 
-#endif /* PPP_IMP_H_ */
 #endif /* PPP_SUPPORT */
+#endif /* LWIP_HDR_PPP_IMPL_H */

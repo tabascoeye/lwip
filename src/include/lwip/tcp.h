@@ -1,8 +1,8 @@
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
- * All rights reserved. 
- * 
- * Redistribution and use in source and binary forms, with or without modification, 
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
  *
  * 1. Redistributions of source code must retain the above copyright notice,
@@ -11,21 +11,21 @@
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
  * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission. 
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED 
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT 
- * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
- * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
  * OF SUCH DAMAGE.
  *
  * This file is part of the lwIP TCP/IP stack.
- * 
+ *
  * Author: Adam Dunkels <adam@sics.se>
  *
  */
@@ -128,11 +128,15 @@ typedef err_t (*tcp_connected_fn)(void *arg, struct tcp_pcb *tpcb, err_t err);
 #if LWIP_WND_SCALE
 #define RCV_WND_SCALE(pcb, wnd) (((wnd) >> (pcb)->rcv_scale))
 #define SND_WND_SCALE(pcb, wnd) (((wnd) << (pcb)->snd_scale))
+#define TCPWND16(x)             ((u16_t)LWIP_MIN((x), 0xFFFF))
+#define TCP_WND_MAX(pcb)        ((tcpwnd_size_t)(((pcb)->flags & TF_WND_SCALE) ? TCP_WND : TCPWND16(TCP_WND)))
 typedef u32_t tcpwnd_size_t;
 typedef u16_t tcpflags_t;
 #else
 #define RCV_WND_SCALE(pcb, wnd) (wnd)
 #define SND_WND_SCALE(pcb, wnd) (wnd)
+#define TCPWND16(x)             (x)
+#define TCP_WND_MAX(pcb)        TCP_WND
 typedef u16_t tcpwnd_size_t;
 typedef u8_t tcpflags_t;
 #endif
@@ -187,18 +191,18 @@ struct tcp_pcb {
 
   /* ports are in host byte order */
   u16_t remote_port;
-  
+
   tcpflags_t flags;
-#define TF_ACK_DELAY   ((tcpflags_t)0x0001U)   /* Delayed ACK. */
-#define TF_ACK_NOW     ((tcpflags_t)0x0002U)   /* Immediate ACK. */
-#define TF_INFR        ((tcpflags_t)0x0004U)   /* In fast recovery. */
-#define TF_TIMESTAMP   ((tcpflags_t)0x0008U)   /* Timestamp option enabled */
-#define TF_RXCLOSED    ((tcpflags_t)0x0010U)   /* rx closed by tcp_shutdown */
-#define TF_FIN         ((tcpflags_t)0x0020U)   /* Connection was closed locally (FIN segment enqueued). */
-#define TF_NODELAY     ((tcpflags_t)0x0040U)   /* Disable Nagle algorithm */
-#define TF_NAGLEMEMERR ((tcpflags_t)0x0080U)   /* nagle enabled, memerr, try to output to prevent delayed ACK to happen */
+#define TF_ACK_DELAY   0x01U   /* Delayed ACK. */
+#define TF_ACK_NOW     0x02U   /* Immediate ACK. */
+#define TF_INFR        0x04U   /* In fast recovery. */
+#define TF_TIMESTAMP   0x08U   /* Timestamp option enabled */
+#define TF_RXCLOSED    0x10U   /* rx closed by tcp_shutdown */
+#define TF_FIN         0x20U   /* Connection was closed locally (FIN segment enqueued). */
+#define TF_NODELAY     0x40U   /* Disable Nagle algorithm */
+#define TF_NAGLEMEMERR 0x80U   /* nagle enabled, memerr, try to output to prevent delayed ACK to happen */
 #if LWIP_WND_SCALE
-#define TF_WND_SCALE   ((tcpflags_t)0x0100U)   /* Window Scale option enabled */
+#define TF_WND_SCALE   0x0100U /* Window Scale option enabled */
 #endif
 
   /* the rest of the fields are in host byte order
@@ -258,7 +262,7 @@ struct tcp_pcb {
   /* These are ordered by sequence number: */
   struct tcp_seg *unsent;   /* Unsent (queued) segments. */
   struct tcp_seg *unacked;  /* Sent but unacknowledged segments. */
-#if TCP_QUEUE_OOSEQ  
+#if TCP_QUEUE_OOSEQ
   struct tcp_seg *ooseq;    /* Received out of sequence segments. */
 #endif /* TCP_QUEUE_OOSEQ */
 
@@ -288,7 +292,7 @@ struct tcp_pcb {
   u32_t keep_intvl;
   u32_t keep_cnt;
 #endif /* LWIP_TCP_KEEPALIVE */
-  
+
   /* Persist timer counter */
   u8_t persist_cnt;
   /* Persist timer back-off */
@@ -348,10 +352,10 @@ void             tcp_poll    (struct tcp_pcb *pcb, tcp_poll_fn poll, u8_t interv
 void             tcp_err     (struct tcp_pcb *pcb, tcp_err_fn err);
 
 #define          tcp_mss(pcb)             (((pcb)->flags & TF_TIMESTAMP) ? ((pcb)->mss - 12)  : (pcb)->mss)
-#define          tcp_sndbuf(pcb)          ((pcb)->snd_buf)
+#define          tcp_sndbuf(pcb)          (TCPWND16((pcb)->snd_buf))
 #define          tcp_sndqueuelen(pcb)     ((pcb)->snd_queuelen)
 #define          tcp_nagle_disable(pcb)   ((pcb)->flags |= TF_NODELAY)
-#define          tcp_nagle_enable(pcb)    ((pcb)->flags &= (tcpflags_t)~TF_NODELAY)
+#define          tcp_nagle_enable(pcb)    ((pcb)->flags = (tcpflags_t)((pcb)->flags & ~TF_NODELAY))
 #define          tcp_nagle_disabled(pcb)  (((pcb)->flags & TF_NODELAY) != 0)
 
 #if TCP_LISTEN_BACKLOG

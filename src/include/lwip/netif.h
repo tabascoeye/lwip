@@ -1,8 +1,8 @@
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
- * All rights reserved. 
- * 
- * Redistribution and use in source and binary forms, with or without modification, 
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
  *
  * 1. Redistributions of source code must retain the above copyright notice,
@@ -11,21 +11,21 @@
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
  * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission. 
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED 
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT 
- * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
- * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
  * OF SUCH DAMAGE.
  *
  * This file is part of the lwIP TCP/IP stack.
- * 
+ *
  * Author: Adam Dunkels <adam@sics.se>
  *
  */
@@ -39,10 +39,11 @@
 #include "lwip/err.h"
 
 #include "lwip/ip_addr.h"
-#include "lwip/ip6_addr.h"
 
 #include "lwip/def.h"
 #include "lwip/pbuf.h"
+#include "lwip/stats.h"
+
 #if LWIP_DHCP
 struct dhcp;
 #endif
@@ -50,7 +51,7 @@ struct dhcp;
 struct autoip;
 #endif
 #if LWIP_IPV6_DHCP6
-#include "lwip/dhcp6.h"
+struct dhcp6;
 #endif /* LWIP_IPV6_DHCP6 */
 
 #ifdef __cplusplus
@@ -97,6 +98,21 @@ extern "C" {
 /** If set, the netif has MLD6 capability.
  * Set by the netif driver in its init function. */
 #define NETIF_FLAG_MLD6         0x40U
+
+#if LWIP_CHECKSUM_CTRL_PER_NETIF
+#define NETIF_CHECKSUM_GEN_IP       0x0001
+#define NETIF_CHECKSUM_GEN_UDP      0x0002
+#define NETIF_CHECKSUM_GEN_TCP      0x0004
+#define NETIF_CHECKSUM_GEN_ICMP     0x0008
+#define NETIF_CHECKSUM_GEN_ICMP6    0x0010
+#define NETIF_CHECKSUM_CHECK_IP     0x0100
+#define NETIF_CHECKSUM_CHECK_UDP    0x0200
+#define NETIF_CHECKSUM_CHECK_TCP    0x0400
+#define NETIF_CHECKSUM_CHECK_ICMP   0x0800
+#define NETIF_CHECKSUM_CHECK_ICMP6  0x1000
+#define NETIF_CHECKSUM_ENABLE_ALL   0xFFFF
+#define NETIF_CHECKSUM_DISABLE_ALL  0x0000
+#endif /* LWIP_CHECKSUM_CTRL_PER_NETIF */
 
 struct netif;
 
@@ -169,13 +185,13 @@ struct netif {
 
 #if LWIP_IPV4
   /** IP address configuration in network byte order */
-  ip4_addr_t ip_addr;
-  ip4_addr_t netmask;
-  ip4_addr_t gw;
+  ip_addr_t ip_addr;
+  ip_addr_t netmask;
+  ip_addr_t gw;
 #endif /* LWIP_IPV4 */
 #if LWIP_IPV6
   /** Array of IPv6 addresses for this netif. */
-  ip6_addr_t ip6_addr[LWIP_IPV6_NUM_ADDRESSES];
+  ip_addr_t ip6_addr[LWIP_IPV6_NUM_ADDRESSES];
   /** The state of each IPv6 address (Tentative, Preferred, etc).
    * @see ip6_addr.h */
   u8_t ip6_addr_state[LWIP_IPV6_NUM_ADDRESSES];
@@ -238,8 +254,11 @@ struct netif {
 #endif /* LWIP_IPV6_DHCP6 */
 #if LWIP_NETIF_HOSTNAME
   /* the hostname for this netif, NULL is a valid value */
-  char*  hostname;
+  const char*  hostname;
 #endif /* LWIP_NETIF_HOSTNAME */
+#if LWIP_CHECKSUM_CTRL_PER_NETIF
+  u16_t chksum_flags;
+#endif /* LWIP_CHECKSUM_CTRL_PER_NETIF*/
   /** maximum transfer unit (in bytes) */
   u16_t mtu;
   /** number of bytes used in hwaddr */
@@ -252,23 +271,16 @@ struct netif {
   char name[2];
   /** number of this interface */
   u8_t num;
-#if LWIP_SNMP
-  /** link type (from "snmp_ifType" enum from snmp.h) */
+#if MIB2_STATS
+  /** link type (from "snmp_ifType" enum from snmp_mib2.h) */
   u8_t link_type;
   /** (estimate) link speed */
   u32_t link_speed;
   /** timestamp at last change made (up/down) */
   u32_t ts;
   /** counters */
-  u32_t ifinoctets;
-  u32_t ifinucastpkts;
-  u32_t ifinnucastpkts;
-  u32_t ifindiscards;
-  u32_t ifoutoctets;
-  u32_t ifoutucastpkts;
-  u32_t ifoutnucastpkts;
-  u32_t ifoutdiscards;
-#endif /* LWIP_SNMP */
+  struct stats_mib2_netif_ctrs mib2_counters;
+#endif /* MIB2_STATS */
 #if LWIP_IPV4 && LWIP_IGMP
   /** This function could be called to add or delete an entry in the multicast
       filter table of the ethernet MAC.*/
@@ -292,25 +304,14 @@ struct netif {
 #endif /* ENABLE_LOOPBACK */
 };
 
-#if LWIP_SNMP
-#define NETIF_INIT_SNMP(netif, type, speed) \
-  /* use "snmp_ifType" enum from snmp.h for "type", snmp_ifType_ethernet_csmacd by example */ \
-  (netif)->link_type = (type);    \
-  /* your link speed here (units: bits per second) */  \
-  (netif)->link_speed = (speed);  \
-  (netif)->ts = 0;              \
-  (netif)->ifinoctets = 0;      \
-  (netif)->ifinucastpkts = 0;   \
-  (netif)->ifinnucastpkts = 0;  \
-  (netif)->ifindiscards = 0;    \
-  (netif)->ifoutoctets = 0;     \
-  (netif)->ifoutucastpkts = 0;  \
-  (netif)->ifoutnucastpkts = 0; \
-  (netif)->ifoutdiscards = 0
-#else /* LWIP_SNMP */
-#define NETIF_INIT_SNMP(netif, type, speed)
-#endif /* LWIP_SNMP */
-
+#if LWIP_CHECKSUM_CTRL_PER_NETIF
+#define NETIF_SET_CHECKSUM_CTRL(netif, chksumflags) do { \
+  (netif)->chksum_flags = chksumflags; } while(0)
+#define IF__NETIF_CHECKSUM_ENABLED(netif, chksumflag) if (((netif) == NULL) || (((netif)->chksum_flags & (chksumflag)) != 0))
+#else /* LWIP_CHECKSUM_CTRL_PER_NETIF */
+#define NETIF_SET_CHECKSUM_CTRL(netif, chksumflags)
+#define IF__NETIF_CHECKSUM_ENABLED(netif, chksumflag)
+#endif /* LWIP_CHECKSUM_CTRL_PER_NETIF */
 
 /** The list of network interfaces. */
 extern struct netif *netif_list;
@@ -334,7 +335,7 @@ void netif_remove(struct netif * netif);
    "et0", where the first two letters are the "name" field in the
    netif structure, and the digit is in the num field in the same
    structure. */
-struct netif *netif_find(char *name);
+struct netif *netif_find(const char *name);
 
 void netif_set_default(struct netif *netif);
 
@@ -342,6 +343,11 @@ void netif_set_default(struct netif *netif);
 void netif_set_ipaddr(struct netif *netif, const ip4_addr_t *ipaddr);
 void netif_set_netmask(struct netif *netif, const ip4_addr_t *netmask);
 void netif_set_gw(struct netif *netif, const ip4_addr_t *gw);
+#define netif_ip4_addr(netif)    ((const ip4_addr_t*)ip_2_ip4(&((netif)->ip_addr)))
+#define netif_ip4_netmask(netif) ((const ip4_addr_t*)ip_2_ip4(&((netif)->netmask)))
+#define netif_ip4_gw(netif)      ((const ip4_addr_t*)ip_2_ip4(&((netif)->gw)))
+#define netif_ip_addr4(netif)    ((const ip_addr_t*)&((netif)->ip_addr))
+#define netif_ip_gw4(netif)      ((const ip_addr_t*)&((netif)->gw))
 #endif /* LWIP_IPV4 */
 
 void netif_set_up(struct netif *netif);
@@ -358,7 +364,7 @@ void netif_set_remove_callback(struct netif *netif, netif_status_callback_fn rem
 
 void netif_set_link_up(struct netif *netif);
 void netif_set_link_down(struct netif *netif);
-/** Ask if a link is up */ 
+/** Ask if a link is up */
 #define netif_is_link_up(netif) (((netif)->flags & NETIF_FLAG_LINK_UP) ? (u8_t)1 : (u8_t)0)
 
 #if LWIP_NETIF_LINK_CALLBACK
@@ -389,12 +395,14 @@ void netif_poll_all(void);
 #endif /* ENABLE_LOOPBACK */
 
 #if LWIP_IPV6
-#define netif_ip6_addr(netif, i)  (&((netif)->ip6_addr[(i)]))
-#define netif_ip6_addr_state(netif, i)  ((netif)->ip6_addr_state[(i)])
-#define netif_ip6_addr_set_state(netif, i, state)  ((netif)->ip6_addr_state[(i)] = (state))
-s8_t netif_get_ip6_addr_match(struct netif *netif, ip6_addr_t *ip6addr);
+#define netif_ip_addr6(netif, i)  ((const ip_addr_t*)(&((netif)->ip6_addr[i])))
+#define netif_ip6_addr(netif, i)  ((const ip6_addr_t*)ip_2_ip6(&((netif)->ip6_addr[i])))
+#define netif_ip6_addr_set(netif, i, addr6) do { ip6_addr_set(ip_2_ip6(&((netif)->ip6_addr[i])), addr6); IP_SET_TYPE_VAL((netif)->ip6_addr[i], IPADDR_TYPE_V6); } while(0)
+#define netif_ip6_addr_state(netif, i)  ((netif)->ip6_addr_state[i])
+#define netif_ip6_addr_set_state(netif, i, state)  ((netif)->ip6_addr_state[i] = (state))
+s8_t netif_get_ip6_addr_match(struct netif *netif, const ip6_addr_t *ip6addr);
 void netif_create_ip6_linklocal_address(struct netif *netif, u8_t from_mac_48bit);
-err_t netif_add_ip6_address(struct netif *netif, ip6_addr_t *ip6addr, s8_t *chosen_idx);
+err_t netif_add_ip6_address(struct netif *netif, const ip6_addr_t *ip6addr, s8_t *chosen_idx);
 #endif /* LWIP_IPV6 */
 
 #if LWIP_NETIF_HWADDRHINT

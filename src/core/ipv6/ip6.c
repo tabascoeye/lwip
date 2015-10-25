@@ -39,7 +39,6 @@
  * <delamer@inicotech.com>
  */
 
-
 #include "lwip/opt.h"
 
 #if LWIP_IPV6  /* don't build if not configured for use in lwipopts.h */
@@ -53,7 +52,7 @@
 #include "lwip/icmp6.h"
 #include "lwip/raw.h"
 #include "lwip/udp.h"
-#include "lwip/tcp_impl.h"
+#include "lwip/priv/tcp_priv.h"
 #include "lwip/dhcp6.h"
 #include "lwip/nd6.h"
 #include "lwip/mld6.h"
@@ -113,7 +112,7 @@ ip6_route(const ip6_addr_t *src, const ip6_addr_t *dest)
     }
 
     /* Try to find the netif for the source address, checking that link is up. */
-    for(netif = netif_list; netif != NULL; netif = netif->next) {
+    for (netif = netif_list; netif != NULL; netif = netif->next) {
       if (!netif_is_up(netif) || !netif_is_link_up(netif)) {
         continue;
       }
@@ -133,7 +132,7 @@ ip6_route(const ip6_addr_t *src, const ip6_addr_t *dest)
   }
 
   /* See if the destination subnet matches a configured address. */
-  for(netif = netif_list; netif != NULL; netif = netif->next) {
+  for (netif = netif_list; netif != NULL; netif = netif->next) {
     if (!netif_is_up(netif) || !netif_is_link_up(netif)) {
       continue;
     }
@@ -159,7 +158,7 @@ ip6_route(const ip6_addr_t *src, const ip6_addr_t *dest)
 
   /* try with the netif that matches the source address. */
   if (!ip6_addr_isany(src)) {
-    for(netif = netif_list; netif != NULL; netif = netif->next) {
+    for (netif = netif_list; netif != NULL; netif = netif->next) {
       if (!netif_is_up(netif) || !netif_is_link_up(netif)) {
         continue;
       }
@@ -206,10 +205,10 @@ ip6_route(const ip6_addr_t *src, const ip6_addr_t *dest)
  * @return the most suitable source address to use, or NULL if no suitable
  *         source address is found
  */
-ip6_addr_t *
+const ip_addr_t *
 ip6_select_source_address(struct netif *netif, const ip6_addr_t * dest)
 {
-  ip6_addr_t * src = NULL;
+  const ip_addr_t *src = NULL;
   u8_t i;
 
   /* If dest is link-local, choose a link-local source. */
@@ -217,7 +216,7 @@ ip6_select_source_address(struct netif *netif, const ip6_addr_t * dest)
     for (i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
       if (ip6_addr_isvalid(netif_ip6_addr_state(netif, i)) &&
           ip6_addr_islinklocal(netif_ip6_addr(netif, i))) {
-        return netif_ip6_addr(netif, i);
+        return netif_ip_addr6(netif, i);
       }
     }
   }
@@ -228,7 +227,7 @@ ip6_select_source_address(struct netif *netif, const ip6_addr_t * dest)
       if (ip6_addr_isvalid(netif_ip6_addr_state(netif, i)) &&
           ip6_addr_issitelocal(netif_ip6_addr(netif, i)) &&
           ip6_addr_netcmp(dest, netif_ip6_addr(netif, i))) {
-        return netif_ip6_addr(netif, i);
+        return netif_ip_addr6(netif, i);
       }
     }
   }
@@ -239,7 +238,7 @@ ip6_select_source_address(struct netif *netif, const ip6_addr_t * dest)
       if (ip6_addr_isvalid(netif_ip6_addr_state(netif, i)) &&
           ip6_addr_isuniquelocal(netif_ip6_addr(netif, i)) &&
           ip6_addr_netcmp(dest, netif_ip6_addr(netif, i))) {
-        return netif_ip6_addr(netif, i);
+        return netif_ip_addr6(netif, i);
       }
     }
   }
@@ -250,14 +249,14 @@ ip6_select_source_address(struct netif *netif, const ip6_addr_t * dest)
       if (ip6_addr_isvalid(netif_ip6_addr_state(netif, i)) &&
           ip6_addr_isglobal(netif_ip6_addr(netif, i))) {
         if (src == NULL) {
-          src = netif_ip6_addr(netif, i);
+          src = netif_ip_addr6(netif, i);
         }
         else {
           /* Replace src only if we find a prefix match. */
           /* TODO find longest matching prefix. */
-          if ((!(ip6_addr_netcmp(src, dest))) &&
+          if ((!(ip6_addr_netcmp(ip_2_ip6(src), dest))) &&
               ip6_addr_netcmp(netif_ip6_addr(netif, i), dest)) {
-            src = netif_ip6_addr(netif, i);
+            src = netif_ip_addr6(netif, i);
           }
         }
       }
@@ -271,7 +270,7 @@ ip6_select_source_address(struct netif *netif, const ip6_addr_t * dest)
   for (i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
     if (ip6_addr_isvalid(netif_ip6_addr_state(netif, i)) &&
         ip6_addr_netcmp(dest, netif_ip6_addr(netif, i))) {
-      return netif_ip6_addr(netif, i);
+      return netif_ip_addr6(netif, i);
     }
   }
 
@@ -375,6 +374,17 @@ ip6_forward(struct pbuf *p, struct ip6_hdr *iphdr, struct netif *inp)
 }
 #endif /* LWIP_IPV6_FORWARD */
 
+#if !LWIP_IPV4
+/* If both IP versions are enabled, this function can dispatch packets to the correct one.
+ * If only IPv6 is enabled, this directly maps at ip6_input.
+ * May be used as netif input function.
+ */
+err_t
+ip_input(struct pbuf *p, struct netif *inp)
+{
+  return ip6_input(p, inp);
+}
+#endif /* !LWIP_IPV4 */
 
 /**
  * This function is called by the network interface device driver when
@@ -487,8 +497,7 @@ ip6_input(struct pbuf *p, struct netif *inp)
     else {
       netif = NULL;
     }
-  }
-  else {
+  } else {
     /* start trying with inp. if that's not acceptable, start walking the
        list of configured netifs.
        'first' is used as a boolean to mark whether we started walking the list */
@@ -520,7 +529,7 @@ ip6_input(struct pbuf *p, struct netif *inp)
       if (netif == inp) {
         netif = netif->next;
       }
-    } while(netif != NULL);
+    } while (netif != NULL);
 netif_found:
     LWIP_DEBUGF(IP6_DEBUG, ("ip6_input: packet accepted on interface %c%c\n",
         netif ? netif->name[0] : 'X', netif? netif->name[1] : 'X'));
@@ -589,7 +598,7 @@ netif_found:
         goto ip6_input_cleanup;
       }
 
-      pbuf_header(p, -hlen);
+      pbuf_header(p, -(s16_t)hlen);
       break;
     case IP6_NEXTH_DESTOPTS:
       LWIP_DEBUGF(IP6_DEBUG, ("ip6_input: packet with Destination options header\n"));
@@ -612,7 +621,7 @@ netif_found:
         goto ip6_input_cleanup;
       }
 
-      pbuf_header(p, -hlen);
+      pbuf_header(p, -(s16_t)hlen);
       break;
     case IP6_NEXTH_ROUTING:
       LWIP_DEBUGF(IP6_DEBUG, ("ip6_input: packet with Routing header\n"));
@@ -635,7 +644,7 @@ netif_found:
         goto ip6_input_cleanup;
       }
 
-      pbuf_header(p, -hlen);
+      pbuf_header(p, -(s16_t)hlen);
       break;
 
     case IP6_NEXTH_FRAGMENT:
@@ -669,7 +678,7 @@ netif_found:
            PP_HTONS(IP6_FRAG_OFFSET_MASK | IP6_FRAG_MORE_FLAG)) == 0) {
         /* This is a 1-fragment packet, usually a packet that we have
          * already reassembled. Skip this header anc continue. */
-        pbuf_header(p, -hlen);
+        pbuf_header(p, -(s16_t)hlen);
       } else {
 #if LWIP_IPV6_REASS
 
@@ -706,8 +715,7 @@ netif_found:
 options_done:
 
   /* p points to IPv6 header again. */
-  /* @todo: this does not work for PBUF_REF pbufs */
-  pbuf_header(p, ip_data.current_ip_header_tot_len);
+  pbuf_header_force(p, ip_data.current_ip_header_tot_len);
 
   /* send to upper layers */
   LWIP_DEBUGF(IP6_DEBUG, ("ip6_input: \n"));
@@ -729,21 +737,21 @@ options_done:
     case IP6_NEXTH_UDPLITE:
 #endif /* LWIP_UDPLITE */
       /* Point to payload. */
-      pbuf_header(p, -ip_data.current_ip_header_tot_len);
+      pbuf_header(p, -(s16_t)ip_data.current_ip_header_tot_len);
       udp_input(p, inp);
       break;
 #endif /* LWIP_UDP */
 #if LWIP_TCP
     case IP6_NEXTH_TCP:
       /* Point to payload. */
-      pbuf_header(p, -ip_data.current_ip_header_tot_len);
+      pbuf_header(p, -(s16_t)ip_data.current_ip_header_tot_len);
       tcp_input(p, inp);
       break;
 #endif /* LWIP_TCP */
 #if LWIP_ICMP6
     case IP6_NEXTH_ICMP6:
       /* Point to payload. */
-      pbuf_header(p, -ip_data.current_ip_header_tot_len);
+      pbuf_header(p, -(s16_t)ip_data.current_ip_header_tot_len);
       icmp6_input(p, inp);
       break;
 #endif /* LWIP_ICMP */
@@ -807,7 +815,7 @@ ip6_output_if(struct pbuf *p, const ip6_addr_t *src, const ip6_addr_t *dest,
   const ip6_addr_t *src_used = src;
   if (dest != IP_HDRINCL) {
     if (src != NULL && ip6_addr_isany(src)) {
-      src = ip6_select_source_address(netif, dest);
+      src = ip_2_ip6(ip6_select_source_address(netif, dest));
       if ((src == NULL) || ip6_addr_isany(src)) {
         /* No appropriate source address was found for this packet. */
         LWIP_DEBUGF(IP6_DEBUG | LWIP_DBG_LEVEL_SERIOUS, ("ip6_output: No suitable source address for packet.\n"));

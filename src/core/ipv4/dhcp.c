@@ -5,7 +5,6 @@
  */
 
 /*
- *
  * Copyright (c) 2001-2004 Leon Woestenberg <leon.woestenberg@gmx.net>
  * Copyright (c) 2001-2004 Axon Digital Design B.V., The Netherlands.
  * All rights reserved.
@@ -32,7 +31,7 @@
  * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
  * OF SUCH DAMAGE.
  *
- * This file is a contribution to the lwIP TCP/IP stack.
+ * This file is part of the lwIP TCP/IP stack.
  * The Swedish Institute of Computer Science and Adam Dunkels
  * are specifically granted permission to redistribute this
  * source code.
@@ -87,7 +86,7 @@
  * LWIP_RAND() (this overrides DHCP_GLOBAL_XID)
  */
 #ifndef DHCP_CREATE_RAND_XID
-#define DHCP_CREATE_RAND_XID 1
+#define DHCP_CREATE_RAND_XID        1
 #endif
 
 /** Default for DHCP_GLOBAL_XID is 0xABCD0000
@@ -106,7 +105,7 @@
 /** Minimum length for reply before packet is parsed */
 #define DHCP_MIN_REPLY_LEN             44
 
-#define REBOOT_TRIES 2
+#define REBOOT_TRIES                2
 
 /** Option handling: options are parsed in dhcp_parse_reply
  * and saved in an array where other functions can load them from.
@@ -212,12 +211,12 @@ static void
 dhcp_handle_nak(struct netif *netif)
 {
   struct dhcp *dhcp = netif->dhcp;
-  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_handle_nak(netif=%p) %c%c%"U16_F"\n", 
+  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_handle_nak(netif=%p) %c%c%"U16_F"\n",
     (void*)netif, netif->name[0], netif->name[1], (u16_t)netif->num));
   /* remove IP address from interface (must no longer be used, as per RFC2131) */
   netif_set_addr(netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY);
   /* Change to a defined state */
-  dhcp_set_state(dhcp, DHCP_BACKING_OFF);
+  dhcp_set_state(dhcp, DHCP_STATE_BACKING_OFF);
   /* We can immediately restart discovery */
   dhcp_discover(netif);
 }
@@ -240,7 +239,7 @@ dhcp_check(struct netif *netif)
   u16_t msecs;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_check(netif=%p) %c%c\n", (void *)netif, (s16_t)netif->name[0],
     (s16_t)netif->name[1]));
-  dhcp_set_state(dhcp, DHCP_CHECKING);
+  dhcp_set_state(dhcp, DHCP_STATE_CHECKING);
   /* create an ARP query for the offered IP address, expecting that no host
      responds, as the IP address should not be in use. */
   result = etharp_query(netif, &dhcp->offered_ip_addr, NULL);
@@ -301,7 +300,7 @@ dhcp_select(struct netif *netif)
   u8_t i;
 
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_select(netif=%p) %c%c%"U16_F"\n", (void*)netif, netif->name[0], netif->name[1], (u16_t)netif->num));
-  dhcp_set_state(dhcp, DHCP_REQUESTING);
+  dhcp_set_state(dhcp, DHCP_STATE_REQUESTING);
 
   /* create and initialize the DHCP message header */
   result = dhcp_create_msg(netif, dhcp, DHCP_REQUEST);
@@ -356,20 +355,21 @@ dhcp_coarse_tmr(void)
   /* iterate through all network interfaces */
   while (netif != NULL) {
     /* only act on DHCP configured interfaces */
-    if (netif->dhcp != NULL) {
+    struct dhcp* dhcp = netif->dhcp;
+    if ((dhcp != NULL) && (dhcp->state != DHCP_STATE_OFF)) {
       /* compare lease time to expire timeout */
-      if (++netif->dhcp->lease_used == netif->dhcp->t0_timeout) {
+      if (dhcp->t0_timeout && (++dhcp->lease_used == dhcp->t0_timeout)) {
         LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_coarse_tmr(): t0 timeout\n"));
         /* this clients' lease time has expired */
         dhcp_release(netif);
         dhcp_discover(netif);
       /* timer is active (non zero), and triggers (zeroes) now? */
-      } else if (netif->dhcp->t2_rebind_time-- == 1) {
+      } else if (dhcp->t2_rebind_time && (dhcp->t2_rebind_time-- == 1)) {
         LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_coarse_tmr(): t2 timeout\n"));
         /* this clients' rebind timeout triggered */
         dhcp_t2_timeout(netif);
       /* timer is active (non zero), and triggers (zeroes) now */
-      } else if (netif->dhcp->t1_renew_time-- == 1) {
+      } else if (dhcp->t1_renew_time && (dhcp->t1_renew_time-- == 1)) {
         LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_coarse_tmr(): t1 timeout\n"));
         /* this clients' renewal timeout triggered */
         dhcp_t1_timeout(netif);
@@ -394,7 +394,7 @@ dhcp_fine_tmr(void)
   while (netif != NULL) {
     /* only act on DHCP configured interfaces */
     if (netif->dhcp != NULL) {
-      /* timer is active (non zero), and is about to trigger now */      
+      /* timer is active (non zero), and is about to trigger now */
       if (netif->dhcp->request_timeout > 1) {
         netif->dhcp->request_timeout--;
       }
@@ -425,11 +425,11 @@ dhcp_timeout(struct netif *netif)
   struct dhcp *dhcp = netif->dhcp;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_timeout()\n"));
   /* back-off period has passed, or server selection timed out */
-  if ((dhcp->state == DHCP_BACKING_OFF) || (dhcp->state == DHCP_SELECTING)) {
+  if ((dhcp->state == DHCP_STATE_BACKING_OFF) || (dhcp->state == DHCP_STATE_SELECTING)) {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_timeout(): restarting discovery\n"));
     dhcp_discover(netif);
   /* receiving the requested lease timed out */
-  } else if (dhcp->state == DHCP_REQUESTING) {
+  } else if (dhcp->state == DHCP_STATE_REQUESTING) {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_timeout(): REQUESTING, DHCP request timed out\n"));
     if (dhcp->tries <= 5) {
       dhcp_select(netif);
@@ -440,7 +440,7 @@ dhcp_timeout(struct netif *netif)
     }
 #if DHCP_DOES_ARP_CHECK
   /* received no ARP reply for the offered address (which is good) */
-  } else if (dhcp->state == DHCP_CHECKING) {
+  } else if (dhcp->state == DHCP_STATE_CHECKING) {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_timeout(): CHECKING, ARP request timed out\n"));
     if (dhcp->tries <= 1) {
       dhcp_check(netif);
@@ -451,7 +451,7 @@ dhcp_timeout(struct netif *netif)
       dhcp_bind(netif);
     }
 #endif /* DHCP_DOES_ARP_CHECK */
-  } else if (dhcp->state == DHCP_REBOOTING) {
+  } else if (dhcp->state == DHCP_STATE_REBOOTING) {
     if (dhcp->tries < REBOOT_TRIES) {
       dhcp_reboot(netif);
     } else {
@@ -470,14 +470,14 @@ dhcp_t1_timeout(struct netif *netif)
 {
   struct dhcp *dhcp = netif->dhcp;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_STATE, ("dhcp_t1_timeout()\n"));
-  if ((dhcp->state == DHCP_REQUESTING) || (dhcp->state == DHCP_BOUND) ||
-      (dhcp->state == DHCP_RENEWING)) {
+  if ((dhcp->state == DHCP_STATE_REQUESTING) || (dhcp->state == DHCP_STATE_BOUND) ||
+      (dhcp->state == DHCP_STATE_RENEWING)) {
     /* just retry to renew - note that the rebind timer (t2) will
      * eventually time-out if renew tries fail. */
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE,
                 ("dhcp_t1_timeout(): must renew\n"));
     /* This slightly different to RFC2131: DHCPREQUEST will be sent from state
-       DHCP_RENEWING, not DHCP_BOUND */
+       DHCP_STATE_RENEWING, not DHCP_STATE_BOUND */
     dhcp_renew(netif);
     /* Calculate next timeout */
     if (((netif->dhcp->t2_timeout - dhcp->lease_used) / 2) >= ((60 + DHCP_COARSE_TIMER_SECS / 2) / DHCP_COARSE_TIMER_SECS))
@@ -497,13 +497,13 @@ dhcp_t2_timeout(struct netif *netif)
 {
   struct dhcp *dhcp = netif->dhcp;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_t2_timeout()\n"));
-  if ((dhcp->state == DHCP_REQUESTING) || (dhcp->state == DHCP_BOUND) ||
-      (dhcp->state == DHCP_RENEWING) || (dhcp->state == DHCP_REBINDING)) {
+  if ((dhcp->state == DHCP_STATE_REQUESTING) || (dhcp->state == DHCP_STATE_BOUND) ||
+      (dhcp->state == DHCP_STATE_RENEWING) || (dhcp->state == DHCP_STATE_REBINDING)) {
     /* just retry to rebind */
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE,
                 ("dhcp_t2_timeout(): must rebind\n"));
     /* This slightly different to RFC2131: DHCPREQUEST will be sent from state
-       DHCP_REBINDING, not DHCP_BOUND */
+       DHCP_STATE_REBINDING, not DHCP_STATE_BOUND */
     dhcp_rebind(netif);
     /* Calculate next timeout */
     if (((netif->dhcp->t0_timeout - dhcp->lease_used) / 2) >= ((60 + DHCP_COARSE_TIMER_SECS / 2) / DHCP_COARSE_TIMER_SECS))
@@ -584,7 +584,7 @@ dhcp_handle_ack(struct netif *netif)
 
 #if LWIP_DHCP_GET_NTP_SRV
   /* NTP servers */
-  for(n = 0; (n < LWIP_DHCP_MAX_NTP_SERVERS) && dhcp_option_given(dhcp, DHCP_OPTION_IDX_NTP_SERVER + n); n++) {
+  for (n = 0; (n < LWIP_DHCP_MAX_NTP_SERVERS) && dhcp_option_given(dhcp, DHCP_OPTION_IDX_NTP_SERVER + n); n++) {
     ip4_addr_set_u32(&ntp_server_addrs[n], htonl(dhcp_get_option_value(dhcp, DHCP_OPTION_IDX_NTP_SERVER + n)));
   }
   dhcp_set_ntp_servers(n, ntp_server_addrs);
@@ -592,7 +592,7 @@ dhcp_handle_ack(struct netif *netif)
 
 #if LWIP_DNS
   /* DNS servers */
-  for(n = 0; (n < DNS_MAX_SERVERS) && dhcp_option_given(dhcp, DHCP_OPTION_IDX_DNS_SERVER + n); n++) {
+  for (n = 0; (n < DNS_MAX_SERVERS) && dhcp_option_given(dhcp, DHCP_OPTION_IDX_DNS_SERVER + n); n++) {
     ip_addr_t dns_addr;
     ip_addr_set_ip4_u32(&dns_addr, htonl(dhcp_get_option_value(dhcp, DHCP_OPTION_IDX_DNS_SERVER + n)));
     dns_setserver(n, &dns_addr);
@@ -615,7 +615,7 @@ dhcp_set_struct(struct netif *netif, struct dhcp *dhcp)
 
   /* clear data structure */
   memset(dhcp, 0, sizeof(struct dhcp));
-  /* dhcp_set_state(&dhcp, DHCP_OFF); */
+  /* dhcp_set_state(&dhcp, DHCP_STATE_OFF); */
   netif->dhcp = dhcp;
 }
 
@@ -694,7 +694,7 @@ dhcp_start(struct netif *netif)
 
   /* clear data structure */
   memset(dhcp, 0, sizeof(struct dhcp));
-  /* dhcp_set_state(&dhcp, DHCP_OFF); */
+  /* dhcp_set_state(&dhcp, DHCP_STATE_OFF); */
   /* allocate UDP PCB */
   dhcp->pcb = udp_new();
   if (dhcp->pcb == NULL) {
@@ -712,7 +712,7 @@ dhcp_start(struct netif *netif)
 #if LWIP_DHCP_CHECK_LINK_UP
   if (!netif_is_link_up(netif)) {
     /* set state INIT and wait for dhcp_network_changed() to call dhcp_discover() */
-    dhcp_set_state(dhcp, DHCP_INIT);
+    dhcp_set_state(dhcp, DHCP_STATE_INIT);
     return ERR_OK;
   }
 #endif /* LWIP_DHCP_CHECK_LINK_UP */
@@ -746,7 +746,7 @@ dhcp_inform(struct netif *netif)
   LWIP_ERROR("netif != NULL", (netif != NULL), return;);
 
   memset(&dhcp, 0, sizeof(struct dhcp));
-  dhcp_set_state(&dhcp, DHCP_INFORMING);
+  dhcp_set_state(&dhcp, DHCP_STATE_INFORMING);
 
   if ((netif->dhcp != NULL) && (netif->dhcp->pcb != NULL)) {
     /* re-use existing pcb */
@@ -797,14 +797,14 @@ dhcp_network_changed(struct netif *netif)
   if (!dhcp)
     return;
   switch (dhcp->state) {
-  case DHCP_REBINDING:
-  case DHCP_RENEWING:
-  case DHCP_BOUND:
-  case DHCP_REBOOTING:
+  case DHCP_STATE_REBINDING:
+  case DHCP_STATE_RENEWING:
+  case DHCP_STATE_BOUND:
+  case DHCP_STATE_REBOOTING:
     dhcp->tries = 0;
     dhcp_reboot(netif);
     break;
-  case DHCP_OFF:
+  case DHCP_STATE_OFF:
     /* stay off */
     break;
   default:
@@ -812,7 +812,7 @@ dhcp_network_changed(struct netif *netif)
        state changes, SELECTING: continue with current 'rid' as we stay in the
        same state */
 #if LWIP_DHCP_AUTOIP_COOP
-    if(dhcp->autoip_coop_state == DHCP_AUTOIP_COOP_STATE_ON) {
+    if (dhcp->autoip_coop_state == DHCP_AUTOIP_COOP_STATE_ON) {
       autoip_stop(netif);
       dhcp->autoip_coop_state = DHCP_AUTOIP_COOP_STATE_OFF;
     }
@@ -836,7 +836,7 @@ void dhcp_arp_reply(struct netif *netif, const ip4_addr_t *addr)
   LWIP_ERROR("netif != NULL", (netif != NULL), return;);
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_arp_reply()\n"));
   /* is a DHCP client doing an ARP check? */
-  if ((netif->dhcp != NULL) && (netif->dhcp->state == DHCP_CHECKING)) {
+  if ((netif->dhcp != NULL) && (netif->dhcp->state == DHCP_STATE_CHECKING)) {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_arp_reply(): CHECKING, arp reply for 0x%08"X32_F"\n",
       ip4_addr_get_u32(addr)));
     /* did a host respond with the address we
@@ -866,7 +866,7 @@ dhcp_decline(struct netif *netif)
   err_t result = ERR_OK;
   u16_t msecs;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_decline()\n"));
-  dhcp_set_state(dhcp, DHCP_BACKING_OFF);
+  dhcp_set_state(dhcp, DHCP_STATE_BACKING_OFF);
   /* create and initialize the DHCP message header */
   result = dhcp_create_msg(netif, dhcp, DHCP_DECLINE);
   if (result == ERR_OK) {
@@ -910,7 +910,7 @@ dhcp_discover(struct netif *netif)
   u8_t i;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_discover()\n"));
   ip4_addr_set_any(&dhcp->offered_ip_addr);
-  dhcp_set_state(dhcp, DHCP_SELECTING);
+  dhcp_set_state(dhcp, DHCP_STATE_SELECTING);
   /* create and initialize the DHCP message header */
   result = dhcp_create_msg(netif, dhcp, DHCP_DISCOVER);
   if (result == ERR_OK) {
@@ -940,7 +940,7 @@ dhcp_discover(struct netif *netif)
     dhcp->tries++;
   }
 #if LWIP_DHCP_AUTOIP_COOP
-  if(dhcp->tries >= LWIP_DHCP_AUTOIP_COOP_TRIES && dhcp->autoip_coop_state == DHCP_AUTOIP_COOP_STATE_OFF) {
+  if (dhcp->tries >= LWIP_DHCP_AUTOIP_COOP_TRIES && dhcp->autoip_coop_state == DHCP_AUTOIP_COOP_STATE_OFF) {
     dhcp->autoip_coop_state = DHCP_AUTOIP_COOP_STATE_ON;
     autoip_start(netif);
   }
@@ -975,7 +975,7 @@ dhcp_bind(struct netif *netif)
      /* set renewal period timer */
      LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_bind(): t0 renewal timer %"U32_F" secs\n", dhcp->offered_t0_lease));
      timeout = (dhcp->offered_t0_lease + DHCP_COARSE_TIMER_SECS / 2) / DHCP_COARSE_TIMER_SECS;
-     if(timeout > 0xffff) {
+     if (timeout > 0xffff) {
        timeout = 0xffff;
      }
      dhcp->t0_timeout = (u16_t)timeout;
@@ -990,7 +990,7 @@ dhcp_bind(struct netif *netif)
     /* set renewal period timer */
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_bind(): t1 renewal timer %"U32_F" secs\n", dhcp->offered_t1_renew));
     timeout = (dhcp->offered_t1_renew + DHCP_COARSE_TIMER_SECS / 2) / DHCP_COARSE_TIMER_SECS;
-    if(timeout > 0xffff) {
+    if (timeout > 0xffff) {
       timeout = 0xffff;
     }
     dhcp->t1_timeout = (u16_t)timeout;
@@ -1004,7 +1004,7 @@ dhcp_bind(struct netif *netif)
   if (dhcp->offered_t2_rebind != 0xffffffffUL) {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_bind(): t2 rebind timer %"U32_F" secs\n", dhcp->offered_t2_rebind));
     timeout = (dhcp->offered_t2_rebind + DHCP_COARSE_TIMER_SECS / 2) / DHCP_COARSE_TIMER_SECS;
-    if(timeout > 0xffff) {
+    if (timeout > 0xffff) {
       timeout = 0xffff;
     }
     dhcp->t2_timeout = (u16_t)timeout;
@@ -1045,7 +1045,7 @@ dhcp_bind(struct netif *netif)
   }
 
 #if LWIP_DHCP_AUTOIP_COOP
-  if(dhcp->autoip_coop_state == DHCP_AUTOIP_COOP_STATE_ON) {
+  if (dhcp->autoip_coop_state == DHCP_AUTOIP_COOP_STATE_ON) {
     autoip_stop(netif);
     dhcp->autoip_coop_state = DHCP_AUTOIP_COOP_STATE_OFF;
   }
@@ -1057,7 +1057,7 @@ dhcp_bind(struct netif *netif)
   /* interface is used by routing now that an address is set */
 
   /* netif is now bound to DHCP leased address */
-  dhcp_set_state(dhcp, DHCP_BOUND);
+  dhcp_set_state(dhcp, DHCP_STATE_BOUND);
 }
 
 /**
@@ -1072,7 +1072,7 @@ dhcp_renew(struct netif *netif)
   err_t result;
   u16_t msecs;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_renew()\n"));
-  dhcp_set_state(dhcp, DHCP_RENEWING);
+  dhcp_set_state(dhcp, DHCP_STATE_RENEWING);
 
   /* create and initialize the DHCP message header */
   result = dhcp_create_msg(netif, dhcp, DHCP_REQUEST);
@@ -1118,7 +1118,7 @@ dhcp_rebind(struct netif *netif)
   err_t result;
   u16_t msecs;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_rebind()\n"));
-  dhcp_set_state(dhcp, DHCP_REBINDING);
+  dhcp_set_state(dhcp, DHCP_STATE_REBINDING);
 
   /* create and initialize the DHCP message header */
   result = dhcp_create_msg(netif, dhcp, DHCP_REQUEST);
@@ -1162,7 +1162,7 @@ dhcp_reboot(struct netif *netif)
   err_t result;
   u16_t msecs;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_reboot()\n"));
-  dhcp_set_state(dhcp, DHCP_REBOOTING);
+  dhcp_set_state(dhcp, DHCP_STATE_REBOOTING);
 
   /* create and initialize the DHCP message header */
   result = dhcp_create_msg(netif, dhcp, DHCP_REQUEST);
@@ -1204,7 +1204,6 @@ dhcp_release(struct netif *netif)
 {
   struct dhcp *dhcp = netif->dhcp;
   err_t result;
-  u16_t msecs;
   ip_addr_t server_ip_addr;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_release()\n"));
   if (dhcp == NULL) {
@@ -1213,9 +1212,9 @@ dhcp_release(struct netif *netif)
   ip_addr_copy(server_ip_addr, dhcp->server_ip_addr);
 
   /* idle DHCP client */
-  dhcp_set_state(dhcp, DHCP_OFF);
+  dhcp_set_state(dhcp, DHCP_STATE_OFF);
   /* clean old DHCP offer */
-  ip_addr_set_zero(&dhcp->server_ip_addr);
+  ip_addr_set_zero_ip4(&dhcp->server_ip_addr);
   ip4_addr_set_zero(&dhcp->offered_ip_addr);
   ip4_addr_set_zero(&dhcp->offered_sn_mask);
   ip4_addr_set_zero(&dhcp->offered_gw_addr);
@@ -1223,7 +1222,13 @@ dhcp_release(struct netif *netif)
   ip4_addr_set_zero(&dhcp->offered_si_addr);
 #endif /* LWIP_DHCP_BOOTP_FILE */
   dhcp->offered_t0_lease = dhcp->offered_t1_renew = dhcp->offered_t2_rebind = 0;
-  
+  dhcp->t1_renew_time = dhcp->t2_rebind_time = dhcp->lease_used = dhcp->t0_timeout = 0;
+
+  if (!dhcp_supplied_address(netif)) {
+    /* don't issue release message when address is not dhcp-assigned */
+    return ERR_OK;
+  }
+
   /* create and initialize the DHCP message header */
   result = dhcp_create_msg(netif, dhcp, DHCP_RELEASE);
   if (result == ERR_OK) {
@@ -1236,16 +1241,11 @@ dhcp_release(struct netif *netif)
 
     udp_sendto_if(dhcp->pcb, dhcp->p_out, &server_ip_addr, DHCP_SERVER_PORT, netif);
     dhcp_delete_msg(dhcp);
-    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_release: RELEASED, DHCP_OFF\n"));
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_release: RELEASED, DHCP_STATE_OFF\n"));
   } else {
+    /* sending release failed, but that's not a problem since the correct behaviour of dhcp does not rely on release */
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_LEVEL_SERIOUS, ("dhcp_release: could not allocate DHCP request\n"));
   }
-  if (dhcp->tries < 255) {
-    dhcp->tries++;
-  }
-  msecs = dhcp->tries < 10 ? dhcp->tries * 1000 : 10 * 1000;
-  dhcp->request_timeout = (msecs + DHCP_FINE_TIMER_MSECS - 1) / DHCP_FINE_TIMER_MSECS;
-  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_release(): set request timeout %"U16_F" msecs\n", msecs));
   /* remove IP address from interface (prevents routing from selecting this interface) */
   netif_set_addr(netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY);
 
@@ -1268,7 +1268,7 @@ dhcp_stop(struct netif *netif)
   /* netif is DHCP configured? */
   if (dhcp != NULL) {
 #if LWIP_DHCP_AUTOIP_COOP
-    if(dhcp->autoip_coop_state == DHCP_AUTOIP_COOP_STATE_ON) {
+    if (dhcp->autoip_coop_state == DHCP_AUTOIP_COOP_STATE_ON) {
       autoip_stop(netif);
       dhcp->autoip_coop_state = DHCP_AUTOIP_COOP_STATE_OFF;
     }
@@ -1279,7 +1279,7 @@ dhcp_stop(struct netif *netif)
       dhcp->pcb = NULL;
     }
     LWIP_ASSERT("reply wasn't freed", dhcp->msg_in == NULL);
-    dhcp_set_state(dhcp, DHCP_OFF);
+    dhcp_set_state(dhcp, DHCP_STATE_OFF);
   }
 }
 
@@ -1404,7 +1404,7 @@ dhcp_parse_reply(struct dhcp *dhcp, struct pbuf *p)
   options_idx_max = p->tot_len;
 again:
   q = p;
-  while((q != NULL) && (options_idx >= q->len)) {
+  while ((q != NULL) && (options_idx >= q->len)) {
     options_idx -= q->len;
     options_idx_max -= q->len;
     q = q->next;
@@ -1416,7 +1416,7 @@ again:
   offset_max = options_idx_max;
   options = (u8_t*)q->payload;
   /* at least 1 byte to read and no end marker, then at least 3 bytes to read? */
-  while((q != NULL) && (options[offset] != DHCP_OPTION_END) && (offset < offset_max)) {
+  while ((q != NULL) && (options[offset] != DHCP_OPTION_END) && (offset < offset_max)) {
     u8_t op = options[offset];
     u8_t len;
     u8_t decode_len = 0;
@@ -1590,8 +1590,13 @@ dhcp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr,
   struct dhcp_msg *reply_msg = (struct dhcp_msg *)p->payload;
   u8_t msg_type;
   u8_t i;
+
+#if LWIP_IPV6
+  LWIP_ASSERT("invalid server address type", !IP_IS_V6(addr));
+#endif /* LWIP_IPV6 */
+
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_recv(pbuf = %p) from DHCP server %"U16_F".%"U16_F".%"U16_F".%"U16_F" port %"U16_F"\n", (void*)p,
-    ip4_addr1_16(addr), ip4_addr2_16(addr), ip4_addr3_16(addr), ip4_addr4_16(addr), port));
+    ip4_addr1_16(ip_2_ip4(addr)), ip4_addr2_16(ip_2_ip4(addr)), ip4_addr3_16(ip_2_ip4(addr)), ip4_addr4_16(ip_2_ip4(addr)), port));
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("pbuf->len = %"U16_F"\n", p->len));
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("pbuf->tot_len = %"U16_F"\n", p->tot_len));
   /* prevent warnings about unused arguments */
@@ -1645,7 +1650,7 @@ dhcp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr,
   if (msg_type == DHCP_ACK) {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("DHCP_ACK received\n"));
     /* in requesting state? */
-    if (dhcp->state == DHCP_REQUESTING) {
+    if (dhcp->state == DHCP_STATE_REQUESTING) {
       dhcp_handle_ack(netif);
 #if DHCP_DOES_ARP_CHECK
       /* check if the acknowledged lease address is already in use */
@@ -1656,21 +1661,21 @@ dhcp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr,
 #endif
     }
     /* already bound to the given lease address? */
-    else if ((dhcp->state == DHCP_REBOOTING) || (dhcp->state == DHCP_REBINDING) || (dhcp->state == DHCP_RENEWING)) {
-      dhcp_handle_ack(netif);
+    else if ((dhcp->state == DHCP_STATE_REBOOTING) || (dhcp->state == DHCP_STATE_REBINDING) ||
+             (dhcp->state == DHCP_STATE_RENEWING)) {
       dhcp_bind(netif);
     }
   }
   /* received a DHCP_NAK in appropriate state? */
   else if ((msg_type == DHCP_NAK) &&
-    ((dhcp->state == DHCP_REBOOTING) || (dhcp->state == DHCP_REQUESTING) ||
-     (dhcp->state == DHCP_REBINDING) || (dhcp->state == DHCP_RENEWING  ))) {
+    ((dhcp->state == DHCP_STATE_REBOOTING) || (dhcp->state == DHCP_STATE_REQUESTING) ||
+     (dhcp->state == DHCP_STATE_REBINDING) || (dhcp->state == DHCP_STATE_RENEWING  ))) {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("DHCP_NAK received\n"));
     dhcp_handle_nak(netif);
   }
-  /* received a DHCP_OFFER in DHCP_SELECTING state? */
-  else if ((msg_type == DHCP_OFFER) && (dhcp->state == DHCP_SELECTING)) {
-    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("DHCP_OFFER received in DHCP_SELECTING state\n"));
+  /* received a DHCP_OFFER in DHCP_STATE_SELECTING state? */
+  else if ((msg_type == DHCP_OFFER) && (dhcp->state == DHCP_STATE_SELECTING)) {
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("DHCP_OFFER received in DHCP_STATE_SELECTING state\n"));
     dhcp->request_timeout = 0;
     /* remember offered lease */
     dhcp_handle_offer(netif);
@@ -1750,9 +1755,9 @@ dhcp_create_msg(struct netif *netif, struct dhcp *dhcp, u8_t message_type)
   ip4_addr_set_zero(&dhcp->msg_out->ciaddr);
   /* set ciaddr to netif->ip_addr based on message_type and state */
   if ((message_type == DHCP_INFORM) || (message_type == DHCP_DECLINE) || (message_type == DHCP_RELEASE) ||
-      ((message_type == DHCP_REQUEST) && /* DHCP_BOUND not used for sending! */
-       ((dhcp->state==DHCP_RENEWING) || dhcp->state==DHCP_REBINDING))) {
-    ip4_addr_copy(dhcp->msg_out->ciaddr, netif->ip_addr);
+      ((message_type == DHCP_REQUEST) && /* DHCP_STATE_BOUND not used for sending! */
+       ((dhcp->state== DHCP_STATE_RENEWING) || dhcp->state== DHCP_STATE_REBINDING))) {
+    ip4_addr_copy(dhcp->msg_out->ciaddr, *netif_ip4_addr(netif));
   }
   ip4_addr_set_zero(&dhcp->msg_out->yiaddr);
   ip4_addr_set_zero(&dhcp->msg_out->siaddr);
@@ -1830,8 +1835,8 @@ u8_t
 dhcp_supplied_address(struct netif *netif)
 {
   if ((netif != NULL) && (netif->dhcp != NULL)) {
-    if ((netif->dhcp->state == DHCP_BOUND) ||
-      (netif->dhcp->state == DHCP_RENEWING)) {
+    if ((netif->dhcp->state == DHCP_STATE_BOUND) ||
+      (netif->dhcp->state == DHCP_STATE_RENEWING)) {
       return 1;
     }
   }

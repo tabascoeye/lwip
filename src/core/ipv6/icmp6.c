@@ -81,7 +81,7 @@ icmp6_input(struct pbuf *p, struct netif *inp)
 {
   struct icmp6_hdr *icmp6hdr;
   struct pbuf * r;
-  ip6_addr_t * reply_src;
+  const ip6_addr_t * reply_src;
 
   ICMP6_STATS_INC(icmp6.recv);
 
@@ -97,13 +97,15 @@ icmp6_input(struct pbuf *p, struct netif *inp)
   icmp6hdr = (struct icmp6_hdr *)p->payload;
 
 #if CHECKSUM_CHECK_ICMP6
-  if (ip6_chksum_pseudo(p, IP6_NEXTH_ICMP6, p->tot_len, ip6_current_src_addr(),
-                        ip6_current_dest_addr()) != 0) {
-    /* Checksum failed */
-    pbuf_free(p);
-    ICMP6_STATS_INC(icmp6.chkerr);
-    ICMP6_STATS_INC(icmp6.drop);
-    return;
+  IF__NETIF_CHECKSUM_ENABLED(inp, NETIF_CHECKSUM_CHECK_ICMP6) {
+    if (ip6_chksum_pseudo(p, IP6_NEXTH_ICMP6, p->tot_len, ip6_current_src_addr(),
+                          ip6_current_dest_addr()) != 0) {
+      /* Checksum failed */
+      pbuf_free(p);
+      ICMP6_STATS_INC(icmp6.chkerr);
+      ICMP6_STATS_INC(icmp6.drop);
+      return;
+    }
   }
 #endif /* CHECKSUM_CHECK_ICMP6 */
 
@@ -161,7 +163,7 @@ icmp6_input(struct pbuf *p, struct netif *inp)
     /* Determine reply source IPv6 address. */
 #if LWIP_MULTICAST_PING
     if (ip6_addr_ismulticast(ip6_current_dest_addr())) {
-      reply_src = ip6_select_source_address(inp, ip6_current_src_addr());
+      reply_src = ip_2_ip6(ip6_select_source_address(inp, ip6_current_src_addr()));
       if (reply_src == NULL) {
         /* drop */
         pbuf_free(p);
@@ -180,8 +182,10 @@ icmp6_input(struct pbuf *p, struct netif *inp)
     ((struct icmp6_echo_hdr *)(r->payload))->type = ICMP6_TYPE_EREP;
     ((struct icmp6_echo_hdr *)(r->payload))->chksum = 0;
 #if CHECKSUM_GEN_ICMP6
-    ((struct icmp6_echo_hdr *)(r->payload))->chksum = ip6_chksum_pseudo(r,
-        IP6_NEXTH_ICMP6, r->tot_len, reply_src, ip6_current_src_addr());
+    IF__NETIF_CHECKSUM_ENABLED(inp, NETIF_CHECKSUM_GEN_ICMP6) {
+      ((struct icmp6_echo_hdr *)(r->payload))->chksum = ip6_chksum_pseudo(r,
+          IP6_NEXTH_ICMP6, r->tot_len, reply_src, ip6_current_src_addr());
+    }
 #endif /* CHECKSUM_GEN_ICMP6 */
 
     /* Send reply. */
@@ -268,7 +272,8 @@ icmp6_send_response(struct pbuf *p, u8_t code, u32_t data, u8_t type)
 {
   struct pbuf *q;
   struct icmp6_hdr *icmp6hdr;
-  ip6_addr_t *reply_src, *reply_dest;
+  const ip6_addr_t *reply_src;
+  ip6_addr_t *reply_dest;
   ip6_addr_t reply_src_local, reply_dest_local;
   struct ip6_hdr *ip6hdr;
   struct netif *netif;
@@ -318,7 +323,7 @@ icmp6_send_response(struct pbuf *p, u8_t code, u32_t data, u8_t type)
     reply_dest = ip6_current_src_addr();
 
     /* Select an address to use as source. */
-    reply_src = ip6_select_source_address(netif, reply_dest);
+    reply_src = ip_2_ip6(ip6_select_source_address(netif, reply_dest));
     if (reply_src == NULL) {
       /* drop */
       pbuf_free(q);
@@ -330,8 +335,10 @@ icmp6_send_response(struct pbuf *p, u8_t code, u32_t data, u8_t type)
   /* calculate checksum */
   icmp6hdr->chksum = 0;
 #if CHECKSUM_GEN_ICMP6
-  icmp6hdr->chksum = ip6_chksum_pseudo(q, IP6_NEXTH_ICMP6, q->tot_len,
-    reply_src, reply_dest);
+  IF__NETIF_CHECKSUM_ENABLED(netif, NETIF_CHECKSUM_GEN_ICMP6) {
+    icmp6hdr->chksum = ip6_chksum_pseudo(q, IP6_NEXTH_ICMP6, q->tot_len,
+      reply_src, reply_dest);
+  }
 #endif /* CHECKSUM_GEN_ICMP6 */
 
   ICMP6_STATS_INC(icmp6.xmit);

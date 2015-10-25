@@ -60,7 +60,7 @@ static void chap_md5_generate_challenge(ppp_pcb *pcb, unsigned char *cp) {
 
 	clen = MD5_MIN_CHALLENGE + magic_pow(MD5_MIN_MAX_POWER_OF_TWO_CHALLENGE);
 	*cp++ = clen;
-	random_bytes(cp, clen);
+	magic_random_bytes(cp, clen);
 }
 
 static int chap_md5_verify_response(ppp_pcb *pcb, int id, const char *name,
@@ -80,8 +80,8 @@ static int chap_md5_verify_response(ppp_pcb *pcb, int id, const char *name,
 		/* Generate hash of ID, secret, challenge */
 		md5_starts(&ctx);
 		md5_update(&ctx, &idbyte, 1);
-		md5_update(&ctx, (unsigned char*)secret, secret_len);
-		md5_update(&ctx, (unsigned char*)challenge, challenge_len);
+		md5_update(&ctx, secret, secret_len);
+		md5_update(&ctx, challenge, challenge_len);
 		md5_finish(&ctx, hash);
 
 		/* Test if our hash matches the peer's response */
@@ -97,7 +97,7 @@ static int chap_md5_verify_response(ppp_pcb *pcb, int id, const char *name,
 
 static void chap_md5_make_response(ppp_pcb *pcb, unsigned char *response, int id, const char *our_name,
 		       const unsigned char *challenge, const char *secret, int secret_len,
-		       const unsigned char *private_) {
+		       unsigned char *private_) {
 	md5_context ctx;
 	unsigned char idbyte = id;
 	int challenge_len = *challenge++;
@@ -107,8 +107,8 @@ static void chap_md5_make_response(ppp_pcb *pcb, unsigned char *response, int id
 
 	md5_starts(&ctx);
 	md5_update(&ctx, &idbyte, 1);
-	md5_update(&ctx, (u_char *)secret, secret_len);
-	md5_update(&ctx, (unsigned char *)challenge, challenge_len);
+	md5_update(&ctx, (const u_char *)secret, secret_len);
+	md5_update(&ctx, challenge, challenge_len);
 	md5_finish(&ctx, &response[1]);
 	response[0] = MD5_HASH_SIZE;
 }

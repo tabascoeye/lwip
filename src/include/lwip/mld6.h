@@ -99,14 +99,15 @@ PACK_STRUCT_END
 #define MLD6_ADD_MAC_FILTER            1
 
 
-#define mld6_init() /* TODO should we init tables? */
 err_t  mld6_stop(struct netif *netif);
 void   mld6_report_groups(struct netif *netif);
 void   mld6_tmr(void);
 struct mld_group *mld6_lookfor_group(struct netif *ifp, const ip6_addr_t *addr);
 void   mld6_input(struct pbuf *p, struct netif *inp);
 err_t  mld6_joingroup(const ip6_addr_t *srcaddr, const ip6_addr_t *groupaddr);
+err_t  mld6_joingroup_netif(struct netif *netif, const ip6_addr_t *groupaddr);
 err_t  mld6_leavegroup(const ip6_addr_t *srcaddr, const ip6_addr_t *groupaddr);
+err_t  mld6_leavegroup_netif(struct netif *netif, const ip6_addr_t *groupaddr);
 
 
 #ifdef __cplusplus

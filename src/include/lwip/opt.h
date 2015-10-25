@@ -6,9 +6,9 @@
 
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
- * All rights reserved. 
- * 
- * Redistribution and use in source and binary forms, with or without modification, 
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
  *
  * 1. Redistributions of source code must retain the above copyright notice,
@@ -17,21 +17,21 @@
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
  * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission. 
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED 
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT 
- * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
- * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
  * OF SUCH DAMAGE.
  *
  * This file is part of the lwIP TCP/IP stack.
- * 
+ *
  * Author: Adam Dunkels <adam@sics.se>
  *
  */
@@ -60,7 +60,7 @@
 #define SYS_LIGHTWEIGHT_PROT            0
 #endif
 
-/** 
+/**
  * NO_SYS==1: Provides VERY minimal functionality. Otherwise,
  * use lwIP facilities.
  */
@@ -193,7 +193,7 @@
 /**
  * MEMP_USE_CUSTOM_POOLS==1: whether to include a user file lwippools.h
  * that defines additional pools beyond the "standard" ones required
- * by lwIP. If you set this to 1, you must have lwippools.h in your 
+ * by lwIP. If you set this to 1, you must have lwippools.h in your
  * include path somewhere.
  */
 #ifndef MEMP_USE_CUSTOM_POOLS
@@ -343,7 +343,7 @@
 
 /**
  * MEMP_NUM_TCPIP_MSG_API: the number of struct tcpip_msg, which are used
- * for callback/timeout API communication. 
+ * for callback/timeout API communication.
  * (only needed if you use tcpip.c)
  */
 #ifndef MEMP_NUM_TCPIP_MSG_API
@@ -352,7 +352,7 @@
 
 /**
  * MEMP_NUM_TCPIP_MSG_INPKT: the number of struct tcpip_msg, which are used
- * for incoming packets. 
+ * for incoming packets.
  * (only needed if you use tcpip.c)
  */
 #ifndef MEMP_NUM_TCPIP_MSG_INPKT
@@ -375,9 +375,10 @@
 #endif
 
 /**
- * MEMP_NUM_SNMP_VARBIND: the number of concurrent requests (does not have to
- * be changed normally) - 2 of these are used per request (1 for input,
- * 1 for output)
+ * MEMP_NUM_SNMP_VARBIND: influences the number of concurrent requests:
+ * 2 of these are used per request (1 for input, 1 for output), so this needs
+ * to be increased only if you want to support concurrent requests or multiple
+ * variables per request/response.
  */
 #ifndef MEMP_NUM_SNMP_VARBIND
 #define MEMP_NUM_SNMP_VARBIND           2
@@ -385,8 +386,9 @@
 
 /**
  * MEMP_NUM_SNMP_VALUE: the number of OID or values concurrently used
- * (does not have to be changed normally) - 3 of these are used per request
- * (1 for the value read and 2 for OIDs - input and output)
+ * (does not have to be changed normally) - >=3 of these are used per request
+ * (1 for the value read and 2 for OIDs - input and output on getnext, or more
+ * if you want to support multiple varibles per request/response)
  */
 #ifndef MEMP_NUM_SNMP_VALUE
 #define MEMP_NUM_SNMP_VALUE             3
@@ -441,7 +443,7 @@
 #endif
 
 /**
- * PBUF_POOL_SIZE: the number of buffers in the pbuf pool. 
+ * PBUF_POOL_SIZE: the number of buffers in the pbuf pool.
  */
 #ifndef PBUF_POOL_SIZE
 #define PBUF_POOL_SIZE                  16
@@ -507,7 +509,7 @@
 /** The maximum number of packets which may be queued for each
  *  unresolved address by other network layers. Defaults to 3, 0 means disabled.
  *  Old packets are dropped, new packets are queued.
- */ 
+ */
 #ifndef ARP_QUEUE_LEN
 #define ARP_QUEUE_LEN                   3
 #endif
@@ -754,7 +756,7 @@
  * LWIP_RAW==1: Enable application layer to hook into the IP layer itself.
  */
 #ifndef LWIP_RAW
-#define LWIP_RAW                        1
+#define LWIP_RAW                        0
 #endif
 
 /**
@@ -863,11 +865,24 @@
    ----------------------------------
 */
 /**
- * LWIP_SNMP==1: Turn on SNMP module. UDP must be available for SNMP
- * transport.
+ * LWIP_SNMP==1: This enables the lwIP SNMP agent. UDP must be available
+ * for SNMP transport.
+ * If you want to use your own SNMP agent, leave this disabled.
+ * To integrate MIB2 of an external agent, you need to enable
+ * LWIP_MIB2_CALLBACKS and MIB2_STATS. This will give you the callbacks
+ * and statistics counters you need to get MIB2 working.
  */
 #ifndef LWIP_SNMP
 #define LWIP_SNMP                       0
+#endif
+
+/**
+ * LWIP_MIB2_CALLBACKS==1: Turn on SNMP MIB2 callbacks.
+ * Turn this on to get callbacks needed to implement MIB2.
+ * Usually MIB2_STATS should be enabled, too.
+ */
+#ifndef LWIP_MIB2_CALLBACKS
+#define LWIP_MIB2_CALLBACKS             LWIP_SNMP
 #endif
 
 /**
@@ -888,7 +903,7 @@
 #endif
 
 /**
- * SNMP_PRIVATE_MIB: 
+ * SNMP_PRIVATE_MIB:
  * When using a private MIB, you have to create a file 'private_mib.h' that contains
  * a 'struct mib_array_node mib_private' which contains your MIB.
  */
@@ -963,11 +978,11 @@
 
 /*
    ----------------------------------
-   ---------- IGMP options ----------
+   ----- Multicast/IGMP options -----
    ----------------------------------
 */
 /**
- * LWIP_IGMP==1: Turn on IGMP module. 
+ * LWIP_IGMP==1: Turn on IGMP module.
  */
 #ifndef LWIP_IGMP
 #define LWIP_IGMP                       0
@@ -975,6 +990,14 @@
 #if !LWIP_IPV4
 #undef LWIP_IGMP
 #define LWIP_IGMP                       0
+#endif
+
+/**
+ * LWIP_MULTICAST_TX_OPTIONS==1: Enable multicast TX support like the socket options
+ * IP_MULTICAST_TTL/IP_MULTICAST_IF/IP_MULTICAST_LOOP
+ */
+#ifndef LWIP_MULTICAST_TX_OPTIONS
+#define LWIP_MULTICAST_TX_OPTIONS       LWIP_IGMP
 #endif
 
 /*
@@ -1000,7 +1023,10 @@
 #define DNS_MAX_NAME_LENGTH             256
 #endif
 
-/** The maximum of DNS servers */
+/** The maximum of DNS servers
+ * The first server can be initialized automatically by defining
+ * DNS_SERVER_ADDRESS(ipaddr), where 'ipaddr' is an 'ip_addr_t*'
+ */
 #ifndef DNS_MAX_SERVERS
 #define DNS_MAX_SERVERS                 2
 #endif
@@ -1009,6 +1035,18 @@
 #ifndef DNS_DOES_NAME_CHECK
 #define DNS_DOES_NAME_CHECK             1
 #endif
+
+/** LWIP_DNS_SECURE: controls the security level of the DNS implementation
+ * Use all DNS security features by default.
+ * This is overridable but should only be needed by very small targets
+ * or when using against non standard DNS servers. */
+#ifndef LWIP_DNS_SECURE
+#define LWIP_DNS_SECURE (LWIP_DNS_SECURE_RAND_XID | LWIP_DNS_SECURE_NO_MULTIPLE_OUTSTANDING | LWIP_DNS_SECURE_RAND_SRC_PORT)
+#endif
+/* A list of DNS security features follows */
+#define LWIP_DNS_SECURE_RAND_XID                1
+#define LWIP_DNS_SECURE_NO_MULTIPLE_OUTSTANDING 2
+#define LWIP_DNS_SECURE_RAND_SRC_PORT           4
 
 /** DNS_LOCAL_HOSTLIST: Implements a local host-to-address list. If enabled,
  *  you have to define
@@ -1083,12 +1121,12 @@
 #endif
 
 /**
- * TCP_WND: The size of a TCP window.  This must be at least 
+ * TCP_WND: The size of a TCP window.  This must be at least
  * (2 * TCP_MSS) for things to work well
  */
 #ifndef TCP_WND
 #define TCP_WND                         (4 * TCP_MSS)
-#endif 
+#endif
 
 /**
  * TCP_MAXRTX: Maximum number of retransmissions of data segments.
@@ -1235,7 +1273,7 @@
  * explicit window update
  */
 #ifndef TCP_WND_UPDATE_THRESHOLD
-#define TCP_WND_UPDATE_THRESHOLD   (TCP_WND / 4)
+#define TCP_WND_UPDATE_THRESHOLD   LWIP_MIN((TCP_WND / 4), (TCP_MSS * 4))
 #endif
 
 /**
@@ -1411,7 +1449,14 @@
  * netif is available, loopback traffic uses this netif.
  */
 #ifndef LWIP_HAVE_LOOPIF
-#define LWIP_HAVE_LOOPIF                0
+#define LWIP_HAVE_LOOPIF                LWIP_NETIF_LOOPBACK
+#endif
+
+/**
+ * LWIP_LOOPIF_MULTICAST==1: Support multicast/IGMP on loop interface (127.0.0.1).
+ */
+#ifndef LWIP_LOOPIF_MULTICAST
+#define LWIP_LOOPIF_MULTICAST               0
 #endif
 
 /*
@@ -1632,7 +1677,9 @@
 #endif
 
 /**
- * LWIP_COMPAT_SOCKETS==1: Enable BSD-style sockets functions names.
+ * LWIP_COMPAT_SOCKETS==1: Enable BSD-style sockets functions names through defines.
+ * LWIP_COMPAT_SOCKETS==2: Same as ==1 but correctly named functions are created.
+ * While this helps code completion, it might conflict with existing libraries.
  * (only used if you use sockets.c)
  */
 #ifndef LWIP_COMPAT_SOCKETS
@@ -1884,6 +1931,13 @@
 #define ND6_STATS                       (LWIP_IPV6)
 #endif
 
+/**
+ * MIB2_STATS==1: Stats for SNMP MIB2.
+ */
+#ifndef MIB2_STATS
+#define MIB2_STATS                      (LWIP_SNMP)
+#endif
+
 #else
 
 #define LINK_STATS                      0
@@ -1903,6 +1957,7 @@
 #define IP6_FRAG_STATS                  0
 #define MLD6_STATS                      0
 #define ND6_STATS                       0
+#define MIB2_STATS                      0
 
 #endif /* LWIP_STATS */
 
@@ -2140,16 +2195,11 @@
 
 /**
  * PPP_MD5_RANDM==1: Use MD5 for better randomness.
- * Automatically enabled if CHAP or L2TP AUTH support is enabled.
+ * Enabled by default if CHAP, EAP, or L2TP AUTH support is enabled.
  */
 #ifndef PPP_MD5_RANDM
-#define PPP_MD5_RANDM                   0
+#define PPP_MD5_RANDM                   (CHAP_SUPPORT || EAP_SUPPORT || PPPOL2TP_AUTH_SUPPORT)
 #endif
-#if CHAP_SUPPORT || PPPOL2TP_AUTH_SUPPORT
-/*  MD5 Random is required for CHAP and L2TP AUTH */
-#undef PPP_MD5_RANDM
-#define PPP_MD5_RANDM                   1
-#endif /* CHAP_SUPPORT || PPPOL2TP_AUTH_SUPPORT */
 
 /**
  * PolarSSL library, used if necessary and not previously disabled
@@ -2175,9 +2225,9 @@
  *
  * If set (=1), the default if required by another enabled PPP feature unless
  * explicitly set to 0, using included lwIP PolarSSL.
- * 
+ *
  * If clear (=0), not needed or using external PolarSSL.
- * 
+ *
  * Beware of the stack requirements which can be a lot larger if you are not
  * using our cleaned PolarSSL library.
  */
@@ -2359,7 +2409,7 @@
 #endif
 
 /**
- * PPP_MAXIDLEFLAG: Max Xmit idle time (in jiffies) before resend flag char.
+ * PPP_MAXIDLEFLAG: Max Xmit idle time (in ms) before resend flag char.
  */
 #ifndef PPP_MAXIDLEFLAG
 #define PPP_MAXIDLEFLAG                 100
@@ -2429,20 +2479,30 @@
    ---------- Checksum options ----------
    --------------------------------------
 */
+
+/**
+ * LWIP_CHECKSUM_CTRL_PER_NETIF==1: Checksum generation/check can be enabled/disabled
+ * per netif.
+ * ATTENTION: if enabled, the CHECKSUM_GEN_* and CHECKSUM_CHECK_* defines must be enabled!
+ */
+#ifndef LWIP_CHECKSUM_CTRL_PER_NETIF
+#define LWIP_CHECKSUM_CTRL_PER_NETIF    0
+#endif
+
 /**
  * CHECKSUM_GEN_IP==1: Generate checksums in software for outgoing IP packets.
  */
 #ifndef CHECKSUM_GEN_IP
 #define CHECKSUM_GEN_IP                 1
 #endif
- 
+
 /**
  * CHECKSUM_GEN_UDP==1: Generate checksums in software for outgoing UDP packets.
  */
 #ifndef CHECKSUM_GEN_UDP
 #define CHECKSUM_GEN_UDP                1
 #endif
- 
+
 /**
  * CHECKSUM_GEN_TCP==1: Generate checksums in software for outgoing TCP packets.
  */
@@ -2456,21 +2516,21 @@
 #ifndef CHECKSUM_GEN_ICMP
 #define CHECKSUM_GEN_ICMP               1
 #endif
- 
+
 /**
  * CHECKSUM_GEN_ICMP6==1: Generate checksums in software for outgoing ICMP6 packets.
  */
 #ifndef CHECKSUM_GEN_ICMP6
 #define CHECKSUM_GEN_ICMP6              1
 #endif
- 
+
 /**
  * CHECKSUM_CHECK_IP==1: Check checksums in software for incoming IP packets.
  */
 #ifndef CHECKSUM_CHECK_IP
 #define CHECKSUM_CHECK_IP               1
 #endif
- 
+
 /**
  * CHECKSUM_CHECK_UDP==1: Check checksums in software for incoming UDP packets.
  */
@@ -2751,6 +2811,11 @@
  * - dest: destination IPv4 address
  * Returns the destination netif or NULL if no destination netif is found. In
  * that case, ip_route() continues as normal.
+ */
+
+/**
+ * LWIP_HOOK_IP4_ROUTE_SRC(dest, src):
+ * - source-based routing for IPv4 (see LWIP_HOOK_IP4_ROUTE(), src may be NULL)
  */
 
 /**

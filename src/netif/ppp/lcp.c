@@ -268,7 +268,7 @@ static void lcp_init(ppp_pcb *pcb);
 static void lcp_input(ppp_pcb *pcb, u_char *p, int len);
 static void lcp_protrej(ppp_pcb *pcb);
 #if PRINTPKT_SUPPORT
-static int lcp_printpkt(u_char *p, int plen,
+static int lcp_printpkt(const u_char *p, int plen,
 		void (*printer) (void *, const char *, ...), void *arg);
 #endif /* PRINTPKT_SUPPORT */
 
@@ -2377,10 +2377,10 @@ static const char* const lcp_codenames[] = {
     "TimeRem"
 };
 
-static int lcp_printpkt(u_char *p, int plen,
+static int lcp_printpkt(const u_char *p, int plen,
 		void (*printer) (void *, const char *, ...), void *arg) {
     int code, id, len, olen, i;
-    u_char *pstart, *optend;
+    const u_char *pstart, *optend;
     u_short cishort;
     u32_t cilong;
 
@@ -2573,7 +2573,7 @@ static int lcp_printpkt(u_char *p, int plen,
     case TERMREQ:
 	if (len > 0 && *p >= ' ' && *p < 0x7f) {
 	    printer(arg, " ");
-	    ppp_print_string((char *)p, len, printer, arg);
+	    ppp_print_string(p, len, printer, arg);
 	    p += len;
 	    len = 0;
 	}
@@ -2605,7 +2605,7 @@ static int lcp_printpkt(u_char *p, int plen,
 	}
 	if (len > 0) {
 	    printer(arg, " ");
-	    ppp_print_string((char *)p, len, printer, arg);
+	    ppp_print_string(p, len, printer, arg);
 	    p += len;
 	    len = 0;
 	}
@@ -2682,7 +2682,7 @@ static void LcpEchoTimeout(void *arg) {
 static void lcp_received_echo_reply(fsm *f, int id, u_char *inp, int len) {
     ppp_pcb *pcb = f->pcb;
     lcp_options *go = &pcb->lcp_gotoptions;
-    u32_t magic;
+    u32_t magic_val;
     LWIP_UNUSED_ARG(id);
 
     /* Check the magic number - don't count replies from ourselves. */
@@ -2690,9 +2690,9 @@ static void lcp_received_echo_reply(fsm *f, int id, u_char *inp, int len) {
 	ppp_dbglog("lcp: received short Echo-Reply, length %d", len);
 	return;
     }
-    GETLONG(magic, inp);
+    GETLONG(magic_val, inp);
     if (go->neg_magicnumber
-	&& magic == go->magicnumber) {
+	&& magic_val == go->magicnumber) {
 	ppp_warn("appear to have received our own echo-reply!");
 	return;
     }

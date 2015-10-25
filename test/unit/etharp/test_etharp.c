@@ -13,10 +13,10 @@
 
 static struct netif test_netif;
 static ip4_addr_t test_ipaddr, test_netmask, test_gw;
-struct eth_addr test_ethaddr = {1,1,1,1,1,1};
-struct eth_addr test_ethaddr2 = {1,1,1,1,1,2};
-struct eth_addr test_ethaddr3 = {1,1,1,1,1,3};
-struct eth_addr test_ethaddr4 = {1,1,1,1,1,4};
+struct eth_addr test_ethaddr =  {{1,1,1,1,1,1}};
+struct eth_addr test_ethaddr2 = {{1,1,1,1,1,2}};
+struct eth_addr test_ethaddr3 = {{1,1,1,1,1,3}};
+struct eth_addr test_ethaddr4 = {{1,1,1,1,1,4}};
 static int linkoutput_ctr;
 
 /* Helper functions */
@@ -136,7 +136,7 @@ START_TEST(test_etharp_table)
   err_t err;
 #endif /* ETHARP_SUPPORT_STATIC_ENTRIES */
   s8_t idx;
-  ip4_addr_t *unused_ipaddr;
+  const ip4_addr_t *unused_ipaddr;
   struct eth_addr *unused_ethaddr;
   struct udp_pcb* pcb;
   LWIP_UNUSED_ARG(_i);

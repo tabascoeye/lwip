@@ -86,7 +86,7 @@ static void upap_lowerdown(ppp_pcb *pcb);
 static void upap_input(ppp_pcb *pcb, u_char *inpacket, int l);
 static void upap_protrej(ppp_pcb *pcb);
 #if PRINTPKT_SUPPORT
-static int upap_printpkt(u_char *p, int plen, void (*printer) (void *, const char *, ...), void *arg);
+static int upap_printpkt(const u_char *p, int plen, void (*printer) (void *, const char *, ...), void *arg);
 #endif /* PRINTPKT_SUPPORT */
 
 const struct protent pap_protent = {
@@ -599,11 +599,11 @@ static const char* const upap_codenames[] = {
     "AuthReq", "AuthAck", "AuthNak"
 };
 
-static int upap_printpkt(u_char *p, int plen, void (*printer) (void *, const char *, ...), void *arg) {
+static int upap_printpkt(const u_char *p, int plen, void (*printer) (void *, const char *, ...), void *arg) {
     int code, id, len;
     int mlen, ulen, wlen;
-    char *user, *pwd, *msg;
-    u_char *pstart;
+    const u_char *user, *pwd, *msg;
+    const u_char *pstart;
 
     if (plen < UPAP_HEADERLEN)
 	return 0;
@@ -630,8 +630,8 @@ static int upap_printpkt(u_char *p, int plen, void (*printer) (void *, const cha
 	wlen = p[ulen + 1];
 	if (len < ulen + wlen + 2)
 	    break;
-	user = (char *) (p + 1);
-	pwd = (char *) (p + ulen + 2);
+	user = (const u_char *) (p + 1);
+	pwd = (const u_char *) (p + ulen + 2);
 	p += ulen + wlen + 2;
 	len -= ulen + wlen + 2;
 	printer(arg, " user=");
@@ -654,7 +654,7 @@ static int upap_printpkt(u_char *p, int plen, void (*printer) (void *, const cha
 	mlen = p[0];
 	if (len < mlen + 1)
 	    break;
-	msg = (char *) (p + 1);
+	msg = (const u_char *) (p + 1);
 	p += mlen + 1;
 	len -= mlen + 1;
 	printer(arg, " ");

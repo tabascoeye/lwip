@@ -54,7 +54,7 @@ extern "C" {
 #endif
 
 /* MIB object instance */
-#define MIB_OBJECT_NONE 0 
+#define MIB_OBJECT_NONE 0
 #define MIB_OBJECT_SCALAR 1
 #define MIB_OBJECT_TAB 2
 
@@ -77,8 +77,6 @@ struct obj_def
   u8_t access;
   /* ASN type for this object */
   u8_t asn_type;
-  /* value length (host length) */
-  u16_t v_len;
   /* length of instance part of supplied object identifier */
   u8_t  id_inst_len;
   /* instance part of supplied object identifier */
@@ -95,9 +93,7 @@ struct snmp_name_ptr
 #define MIB_NODE_SC 0x01
 /** MIB const array node */
 #define MIB_NODE_AR 0x02
-/** MIB array node (mem_malloced from RAM) */
-#define MIB_NODE_RA 0x03
-/** MIB list root node (mem_malloced from RAM) */
+/** MIB list root node (memp_malloced from RAM) */
 #define MIB_NODE_LR 0x04
 /** MIB node for external objects */
 #define MIB_NODE_EX 0x05
@@ -105,63 +101,47 @@ struct snmp_name_ptr
 /** node "base class" layout, the mandatory fields for a node  */
 struct mib_node
 {
-  /** returns struct obj_def for the given object identifier */
-  void (*get_object_def)(u8_t ident_len, s32_t *ident, struct obj_def *od);
-  /** returns object value for the given object identifier,
-     @note the caller must allocate at least len bytes for the value */
-  void (*get_value)(struct obj_def *od, u16_t len, void *value);
-  /** tests length and/or range BEFORE setting */
-  u8_t (*set_test)(struct obj_def *od, u16_t len, void *value);
-  /** sets object value, only to be called when set_test()  */
-  void (*set_value)(struct obj_def *od, u16_t len, void *value);  
   /** One out of MIB_NODE_AR, MIB_NODE_LR or MIB_NODE_EX */
   u8_t node_type;
-  /* array or max list length */
-  u16_t maxlength;
 };
 
 /** derived node for scalars .0 index */
-typedef struct mib_node mib_scalar_node;
+struct mib_scalar_node
+{
+  /* inherited "base class" members */
+  struct mib_node node;
+  /** returns struct obj_def for the given object identifier */
+  void (*get_object_def)(u8_t ident_len, s32_t *ident, struct obj_def *od);
+  /** returns object value for the given object identifier */
+  u16_t (*get_value)(struct obj_def *od, void *value);
+  /** tests length and/or range BEFORE setting */
+  u8_t (*set_test)(struct obj_def *od, u16_t len, void *value);
+  /** sets object value, only to be called when set_test()  */
+  void (*set_value)(struct obj_def *od, u16_t len, void *value);
+};
 
-/** derived node, points to a fixed size const array
+/** describes an array entry (objid/node pair) */
+struct mib_array_node_entry
+{
+  s32_t objid;
+  const struct mib_node *nptr;
+};
+
+/** derived node, points to a fixed size array
     of sub-identifiers plus a 'child' pointer */
 struct mib_array_node
 {
   /* inherited "base class" members */
-  void (*get_object_def)(u8_t ident_len, s32_t *ident, struct obj_def *od);
-  void (*get_value)(struct obj_def *od, u16_t len, void *value);
-  u8_t (*set_test)(struct obj_def *od, u16_t len, void *value);
-  void (*set_value)(struct obj_def *od, u16_t len, void *value);
-
-  u8_t node_type;
-  u16_t maxlength;
+  struct mib_node node;
 
   /* additional struct members */
-  const s32_t *objid;
-  const struct mib_node* const *nptr;
-};
-
-/** derived node, points to a fixed size mem_malloced array
-    of sub-identifiers plus a 'child' pointer */
-struct mib_ram_array_node
-{
-  /* inherited "base class" members */
-  void (*get_object_def)(u8_t ident_len, s32_t *ident, struct obj_def *od);
-  void (*get_value)(struct obj_def *od, u16_t len, void *value);
-  u8_t (*set_test)(struct obj_def *od, u16_t len, void *value);
-  void (*set_value)(struct obj_def *od, u16_t len, void *value);
-
-  u8_t node_type;
   u16_t maxlength;
-
-  /* additional struct members */
-  s32_t *objid;
-  struct mib_node **nptr;
+  const struct mib_array_node_entry *entries;
 };
 
 struct mib_list_node
 {
-  struct mib_list_node *prev;  
+  struct mib_list_node *prev;
   struct mib_list_node *next;
   s32_t objid;
   struct mib_node *nptr;
@@ -172,13 +152,7 @@ struct mib_list_node
 struct mib_list_rootnode
 {
   /* inherited "base class" members */
-  void (*get_object_def)(u8_t ident_len, s32_t *ident, struct obj_def *od);
-  void (*get_value)(struct obj_def *od, u16_t len, void *value);
-  u8_t (*set_test)(struct obj_def *od, u16_t len, void *value);
-  void (*set_value)(struct obj_def *od, u16_t len, void *value);
-
-  u8_t node_type;
-  u16_t maxlength;
+  struct mib_scalar_node scalar;
 
   /* additional struct members */
   struct mib_list_node *head;
@@ -192,13 +166,7 @@ struct mib_list_rootnode
 struct mib_external_node
 {
   /* inherited "base class" members */
-  void (*get_object_def)(u8_t ident_len, s32_t *ident, struct obj_def *od);
-  void (*get_value)(struct obj_def *od, u16_t len, void *value);
-  u8_t (*set_test)(struct obj_def *od, u16_t len, void *value);
-  void (*set_value)(struct obj_def *od, u16_t len, void *value);
-
-  u8_t node_type;
-  u16_t maxlength;
+  struct mib_node node;
 
   /* additional struct members */
   /** points to an external (in memory) record of some sort of addressing
@@ -220,10 +188,10 @@ struct mib_external_node
   void (*set_value_q)(u8_t rid, struct obj_def *od, u16_t len, void *value);
   /** async Answers */
   void (*get_object_def_a)(u8_t rid, u8_t ident_len, s32_t *ident, struct obj_def *od);
-  void (*get_value_a)(u8_t rid, struct obj_def *od, u16_t len, void *value);
+  u16_t (*get_value_a)(u8_t rid, struct obj_def *od, void *value);
   u8_t (*set_test_a)(u8_t rid, struct obj_def *od, u16_t len, void *value);
   void (*set_value_a)(u8_t rid, struct obj_def *od, u16_t len, void *value);
-  /** async Panic Close (agent returns error reply, 
+  /** async Panic Close (agent returns error reply,
       e.g. used for external transaction cleanup) */
   void (*get_object_def_pc)(u8_t rid, u8_t ident_len, s32_t *ident);
   void (*get_value_pc)(u8_t rid, struct obj_def *od);
@@ -236,12 +204,12 @@ extern const struct mib_array_node internet;
 
 /** dummy function pointers for non-leaf MIB nodes from mib2.c */
 void noleafs_get_object_def(u8_t ident_len, s32_t *ident, struct obj_def *od);
-void noleafs_get_value(struct obj_def *od, u16_t len, void *value);
+u16_t noleafs_get_value(struct obj_def *od, void *value);
 u8_t noleafs_set_test(struct obj_def *od, u16_t len, void *value);
 void noleafs_set_value(struct obj_def *od, u16_t len, void *value);
 
 void snmp_oidtoip(s32_t *ident, ip4_addr_t *ip);
-void snmp_iptooid(ip4_addr_t *ip, s32_t *ident);
+void snmp_iptooid(const ip4_addr_t *ip, s32_t *ident);
 void snmp_ifindextonetif(s32_t ifindex, struct netif **netif);
 void snmp_netiftoifindex(struct netif *netif, s32_t *ifidx);
 
@@ -258,6 +226,37 @@ const struct mib_node* snmp_search_tree(const struct mib_node *node, u8_t ident_
 const struct mib_node* snmp_expand_tree(const struct mib_node *node, u8_t ident_len, s32_t *ident, struct snmp_obj_id *oidret);
 u8_t snmp_iso_prefix_tst(u8_t ident_len, s32_t *ident);
 u8_t snmp_iso_prefix_expand(u8_t ident_len, s32_t *ident, struct snmp_obj_id *oidret);
+
+/* SNMP stack internal MIB2 statistics */
+void mib2_inc_snmpinpkts(void);
+void mib2_inc_snmpoutpkts(void);
+void mib2_inc_snmpinbadversions(void);
+void mib2_inc_snmpinbadcommunitynames(void);
+void mib2_inc_snmpinbadcommunityuses(void);
+void mib2_inc_snmpinasnparseerrs(void);
+void mib2_inc_snmpintoobigs(void);
+void mib2_inc_snmpinnosuchnames(void);
+void mib2_inc_snmpinbadvalues(void);
+void mib2_inc_snmpinreadonlys(void);
+void mib2_inc_snmpingenerrs(void);
+void mib2_add_snmpintotalreqvars(u8_t value);
+void mib2_add_snmpintotalsetvars(u8_t value);
+void mib2_inc_snmpingetrequests(void);
+void mib2_inc_snmpingetnexts(void);
+void mib2_inc_snmpinsetrequests(void);
+void mib2_inc_snmpingetresponses(void);
+void mib2_inc_snmpintraps(void);
+void mib2_inc_snmpouttoobigs(void);
+void mib2_inc_snmpoutnosuchnames(void);
+void mib2_inc_snmpoutbadvalues(void);
+void mib2_inc_snmpoutgenerrs(void);
+void mib2_inc_snmpoutgetrequests(void);
+void mib2_inc_snmpoutgetnexts(void);
+void mib2_inc_snmpoutsetrequests(void);
+void mib2_inc_snmpoutgetresponses(void);
+void mib2_inc_snmpouttraps(void);
+void mib2_get_snmpgrpid_ptr(const struct snmp_obj_id **oid);
+void mib2_get_snmpenableauthentraps(u8_t *value);
 
 #ifdef __cplusplus
 }

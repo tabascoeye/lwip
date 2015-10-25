@@ -71,19 +71,19 @@
  */
 static void mppe_rekey(ppp_mppe_state * state, int initial_key)
 {
-	sha1_context sha1;
+	sha1_context sha1_ctx;
 	u8_t sha1_digest[SHA1_SIGNATURE_SIZE];
 
 	/*
 	 * Key Derivation, from RFC 3078, RFC 3079.
 	 * Equivalent to Get_Key() for MS-CHAP as described in RFC 3079.
 	 */
-	sha1_starts(&sha1);
-	sha1_update(&sha1, state->master_key, state->keylen);
-	sha1_update(&sha1, (unsigned char *)mppe_sha1_pad1, SHA1_PAD_SIZE);
-	sha1_update(&sha1, state->session_key, state->keylen);
-	sha1_update(&sha1, (unsigned char *)mppe_sha1_pad2, SHA1_PAD_SIZE);
-	sha1_finish(&sha1, sha1_digest);
+	sha1_starts(&sha1_ctx);
+	sha1_update(&sha1_ctx, state->master_key, state->keylen);
+	sha1_update(&sha1_ctx, mppe_sha1_pad1, SHA1_PAD_SIZE);
+	sha1_update(&sha1_ctx, state->session_key, state->keylen);
+	sha1_update(&sha1_ctx, mppe_sha1_pad2, SHA1_PAD_SIZE);
+	sha1_finish(&sha1_ctx, sha1_digest);
 	MEMCPY(state->session_key, sha1_digest, state->keylen);
 
 	if (!initial_key) {
@@ -115,9 +115,9 @@ void
 mppe_init(ppp_pcb *pcb, ppp_mppe_state *state, u8_t options)
 {
 #if PPP_DEBUG
-	const u8_t *debugstr = (u8_t*)"mppe_comp_init";
+	const u8_t *debugstr = (const u8_t*)"mppe_comp_init";
 	if (&pcb->mppe_decomp == state) {
-	    debugstr = (u8_t*)"mppe_decomp_init";
+	    debugstr = (const u8_t*)"mppe_decomp_init";
 	}
 #endif /* PPP_DEBUG */
 
@@ -198,20 +198,33 @@ void mppe_comp_reset(ppp_pcb *pcb, ppp_mppe_state *state)
 err_t
 mppe_compress(ppp_pcb *pcb, ppp_mppe_state *state, struct pbuf **pb, u16_t protocol)
 {
-	struct pbuf *n;
+	struct pbuf *n, *np;
 	u8_t *pl;
+	err_t err;
 
-	if (pbuf_header(*pb, (s16_t)(MPPE_OVHD + sizeof(protocol))) == 0) {
-		pbuf_ref(*pb);
-	} else {
-		struct pbuf *np = pbuf_alloc(PBUF_RAW, MPPE_OVHD + sizeof(protocol), PBUF_RAM);
-		if (!np) {
-			return ERR_MEM;
-		}
-		pbuf_chain(np, *pb);
-		*pb = np;
+	LWIP_UNUSED_ARG(pcb);
+
+	/* TCP stack requires that we don't change the packet payload, therefore we copy
+	 * the whole packet before encryption.
+	 */
+	np = pbuf_alloc(PBUF_RAW, MPPE_OVHD + sizeof(protocol) + (*pb)->tot_len, PBUF_POOL);
+	if (!np) {
+		return ERR_MEM;
 	}
-	pl = (u8_t*)(*pb)->payload;
+
+	/* Hide MPPE header + protocol */
+	pbuf_header(np, -(s16_t)(MPPE_OVHD + sizeof(protocol)));
+
+	if ((err = pbuf_copy(np, *pb)) != ERR_OK) {
+		pbuf_free(np);
+		return err;
+	}
+
+	/* Reveal MPPE header + protocol */
+	pbuf_header(np, (s16_t)(MPPE_OVHD + sizeof(protocol)));
+
+	*pb = np;
+	pl = (u8_t*)np->payload;
 
 	state->ccount = (state->ccount + 1) % MPPE_CCOUNT_SPACE;
 	PPPDEBUG(LOG_DEBUG, ("mppe_compress[%d]: ccount %d\n", pcb->netif->num, state->ccount));
@@ -239,10 +252,10 @@ mppe_compress(ppp_pcb *pcb, ppp_mppe_state *state, struct pbuf **pb, u16_t proto
 	pl[1] = protocol;
 
 	/* Hide MPPE header */
-	pbuf_header(*pb, -(s16_t)MPPE_OVHD);
+	pbuf_header(np, -(s16_t)MPPE_OVHD);
 
 	/* Encrypt packet */
-	for (n = *pb; n != NULL; n = n->next) {
+	for (n = np; n != NULL; n = n->next) {
 		arc4_crypt(&state->arc4, (u8_t*)n->payload, n->len);
 		if (n->tot_len == n->len) {
 			break;
@@ -250,7 +263,7 @@ mppe_compress(ppp_pcb *pcb, ppp_mppe_state *state, struct pbuf **pb, u16_t proto
 	}
 
 	/* Reveal MPPE header */
-	pbuf_header(*pb, (s16_t)MPPE_OVHD);
+	pbuf_header(np, (s16_t)MPPE_OVHD);
 
 	return ERR_OK;
 }

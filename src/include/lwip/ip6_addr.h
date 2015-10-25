@@ -6,9 +6,9 @@
 
 /*
  * Copyright (c) 2010 Inico Technologies Ltd.
- * All rights reserved. 
- * 
- * Redistribution and use in source and binary forms, with or without modification, 
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
  *
  * 1. Redistributions of source code must retain the above copyright notice,
@@ -17,21 +17,21 @@
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
  * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission. 
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED 
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT 
- * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
- * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
  * OF SUCH DAMAGE.
  *
  * This file is part of the lwIP TCP/IP stack.
- * 
+ *
  * Author: Ivan Delamer <delamer@inicotech.com>
  *
  * Structs and macros for handling IPv6 addresses.
@@ -78,7 +78,7 @@ typedef struct ip6_addr_packed ip6_addr_p_t;
 
 #if BYTE_ORDER == BIG_ENDIAN
 /** Set an IPv6 partial address given by byte-parts. */
-#define IP6_ADDR(ip6addr, index, a,b,c,d) \
+#define IP6_ADDR_PART(ip6addr, index, a,b,c,d) \
   (ip6addr)->addr[index] = ((u32_t)((a) & 0xff) << 24) | \
                            ((u32_t)((b) & 0xff) << 16) | \
                            ((u32_t)((c) & 0xff) << 8)  | \
@@ -86,12 +86,20 @@ typedef struct ip6_addr_packed ip6_addr_p_t;
 #else
 /** Set an IPv6 partial address given by byte-parts.
 Little-endian version, stored in network order (no htonl). */
-#define IP6_ADDR(ip6addr, index, a,b,c,d) \
+#define IP6_ADDR_PART(ip6addr, index, a,b,c,d) \
   (ip6addr)->addr[index] = ((u32_t)((d) & 0xff) << 24) | \
                            ((u32_t)((c) & 0xff) << 16) | \
                            ((u32_t)((b) & 0xff) << 8)  | \
                             (u32_t)((a) & 0xff)
 #endif
+
+/** Set a full IPv6 address by passing the 4 u32_t indices in network byte order
+    (use PP_HTONL() for constants) */
+#define IP6_ADDR(ip6addr, idx0, idx1, idx2, idx3) do { \
+  (ip6addr)->addr[0] = idx0; \
+  (ip6addr)->addr[1] = idx1; \
+  (ip6addr)->addr[2] = idx2; \
+  (ip6addr)->addr[3] = idx3; } while(0)
 
 /** Access address in 16-bit block */
 #define IP6_ADDR_BLOCK1(ip6addr) ((u16_t)(htonl((ip6addr)->addr[0]) >> 16) & 0xffff)

@@ -42,13 +42,13 @@
 #include "lwip/opt.h"
 
 #include "lwip/timers.h"
-#include "lwip/tcp_impl.h"
+#include "lwip/priv/tcp_priv.h"
 
 #if LWIP_TIMERS
 
 #include "lwip/def.h"
 #include "lwip/memp.h"
-#include "lwip/tcpip.h"
+#include "lwip/priv/tcpip_priv.h"
 
 #include "lwip/ip_frag.h"
 #include "netif/etharp.h"
@@ -374,7 +374,7 @@ sys_timeout(u32_t msecs, sys_timeout_handler handler, void *arg)
     timeout->next = next_timeout;
     next_timeout = timeout;
   } else {
-    for(t = next_timeout; t != NULL; t = t->next) {
+    for (t = next_timeout; t != NULL; t = t->next) {
       timeout->time -= t->time;
       if (t->next == NULL || t->next->time > timeout->time) {
         if (t->next != NULL) {
@@ -447,8 +447,7 @@ sys_check_timeouts(void)
     now = sys_now();
     /* this cares for wraparounds */
     diff = now - timeouts_last_time;
-    do
-    {
+    do {
 #if PBUF_POOL_FREE_OOSEQ
       PBUF_CHECK_FREE_OOSEQ();
 #endif /* PBUF_POOL_FREE_OOSEQ */
@@ -474,7 +473,7 @@ sys_check_timeouts(void)
         }
       }
     /* repeat until all expired timers have been called */
-    } while(had_one);
+    } while (had_one);
   }
 }
 
@@ -495,10 +494,16 @@ sys_restart_timeouts(void)
 u32_t
 sys_timeouts_sleeptime(void)
 {
+  u32_t diff;
   if (next_timeout == NULL) {
     return 0xffffffff;
   }
-  return (sys_now() - timeouts_last_time) + next_timeout->time;
+  diff = sys_now() - timeouts_last_time;
+  if (diff > next_timeout->time) {
+    return 0;
+  } else {
+    return next_timeout->time - diff;
+  }
 }
 
 #else /* NO_SYS */

@@ -111,7 +111,7 @@ raw_input(struct pbuf *p, struct netif *inp)
          ip_addr_cmp(&pcb->local_ip, ip_current_dest_addr()))) {
 #if IP_SOF_BROADCAST_RECV
       /* broadcast filter? */
-      if ((ip_get_option(pcb, SOF_BROADCAST) || !ip_addr_isbroadcast(ip_current_dest_addr(), inp))
+      if ((ip_get_option(pcb, SOF_BROADCAST) || !ip_addr_isbroadcast(ip_current_dest_addr(), ip_current_netif()))
 #if LWIP_IPV6
           || PCB_ISIPV6(pcb)
 #endif /* LWIP_IPV6 */
@@ -201,14 +201,14 @@ raw_connect(struct raw_pcb *pcb, const ip_addr_t *ipaddr)
 
 /**
  * Set the callback function for received packets that match the
- * raw PCB's protocol and binding. 
- * 
+ * raw PCB's protocol and binding.
+ *
  * The callback function MUST either
  * - eat the packet by calling pbuf_free() and returning non-zero. The
  *   packet will not be passed to other raw PCBs or other protocol layers.
  * - not free the packet, and return zero. The packet will be matched
  *   against further PCBs and/or forwarded to another protocol layers.
- * 
+ *
  * @return non-zero if the packet was free()d, zero if the packet remains
  * available for others.
  */
@@ -237,13 +237,10 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *ipaddr)
 {
   err_t err;
   struct netif *netif;
-  ip_addr_t *src_ip;
+  const ip_addr_t *src_ip;
   struct pbuf *q; /* q will be sent down the stack */
   s16_t header_size;
   const ip_addr_t *dst_ip = ipaddr;
-#if LWIP_IPV4 && LWIP_IPV6
-  ip_addr_t src_ip_tmp;
-#endif /* LWIP_IPV4 && LWIP_IPV6 */
 
   if ((pcb == NULL) || (ipaddr == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, ipaddr)) {
     return ERR_VAL;
@@ -275,10 +272,10 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *ipaddr)
     }
     /* { first pbuf q points to header pbuf } */
     LWIP_DEBUGF(RAW_DEBUG, ("raw_sendto: added header pbuf %p before given pbuf %p\n", (void *)q, (void *)p));
-  }  else {
+  } else {
     /* first pbuf q equals given pbuf */
     q = p;
-    if(pbuf_header(q, -header_size)) {
+    if (pbuf_header(q, -header_size)) {
       LWIP_ASSERT("Can't restore header we just removed!", 0);
       return ERR_MEM;
     }
@@ -314,7 +311,7 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *ipaddr)
 
   if (ip_addr_isany(&pcb->local_ip)) {
     /* use outgoing network interface IP address as source address */
-    src_ip = ip_netif_get_local_ip(PCB_ISIPV6(pcb), netif, dst_ip, &src_ip_tmp);
+    src_ip = ip_netif_get_local_ip(PCB_ISIPV6(pcb), netif, dst_ip);
 #if LWIP_IPV6
     if (src_ip == NULL) {
       if (q != p) {
@@ -381,7 +378,7 @@ raw_remove(struct raw_pcb *pcb)
     raw_pcbs = raw_pcbs->next;
     /* pcb not 1st in list */
   } else {
-    for(pcb2 = raw_pcbs; pcb2 != NULL; pcb2 = pcb2->next) {
+    for (pcb2 = raw_pcbs; pcb2 != NULL; pcb2 = pcb2->next) {
       /* find pcb in raw_pcbs list */
       if (pcb2->next != NULL && pcb2->next == pcb) {
         /* remove pcb from list */

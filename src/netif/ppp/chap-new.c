@@ -104,7 +104,7 @@ static void chap_handle_status(ppp_pcb *pcb, int code, int id,
 static void chap_protrej(ppp_pcb *pcb);
 static void chap_input(ppp_pcb *pcb, unsigned char *pkt, int pktlen);
 #if PRINTPKT_SUPPORT
-static int chap_print_pkt(unsigned char *p, int plen,
+static int chap_print_pkt(const unsigned char *p, int plen,
 		void (*printer) (void *, const char *, ...), void *arg);
 #endif /* PRINTPKT_SUPPORT */
 
@@ -179,7 +179,7 @@ void chap_auth_peer(ppp_pcb *pcb, const char *our_name, int digest_code) {
 	pcb->chap_server.digest = dp;
 	pcb->chap_server.name = our_name;
 	/* Start with a random ID value */
-	pcb->chap_server.id = (u8_t)magic_pow(8);
+	pcb->chap_server.id = magic();
 	pcb->chap_server.flags |= AUTH_STARTED;
 	if (pcb->chap_server.flags & LOWERUP)
 		chap_timeout(pcb);
@@ -590,7 +590,7 @@ static const char* const chap_code_names[] = {
 	"Challenge", "Response", "Success", "Failure"
 };
 
-static int chap_print_pkt(unsigned char *p, int plen,
+static int chap_print_pkt(const unsigned char *p, int plen,
 	       void (*printer) (void *, const char *, ...), void *arg) {
 	int code, id, len;
 	int clen, nlen;
@@ -626,12 +626,12 @@ static int chap_print_pkt(unsigned char *p, int plen,
 			printer(arg, "%.2x", x);
 		}
 		printer(arg, ">, name = ");
-		ppp_print_string((char *)p, nlen, printer, arg);
+		ppp_print_string(p, nlen, printer, arg);
 		break;
 	case CHAP_FAILURE:
 	case CHAP_SUCCESS:
 		printer(arg, " ");
-		ppp_print_string((char *)p, len, printer, arg);
+		ppp_print_string(p, len, printer, arg);
 		break;
 	default:
 		for (clen = len; clen > 0; --clen) {

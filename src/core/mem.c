@@ -314,7 +314,7 @@ mem_init(void)
 
   MEM_STATS_AVAIL(avail, MEM_SIZE_ALIGNED);
 
-  if(sys_mutex_new(&mem_mutex) != ERR_OK) {
+  if (sys_mutex_new(&mem_mutex) != ERR_OK) {
     LWIP_ASSERT("failed to create mem_mutex", 0);
   }
 }
@@ -396,7 +396,7 @@ mem_trim(void *rmem, mem_size_t newsize)
      adjust for alignment. */
   newsize = LWIP_MEM_ALIGN_SIZE(newsize);
 
-  if(newsize < MIN_SIZE_ALIGNED) {
+  if (newsize < MIN_SIZE_ALIGNED) {
     /* every data block must be at least MIN_SIZE_ALIGNED long */
     newsize = MIN_SIZE_ALIGNED;
   }
@@ -437,7 +437,7 @@ mem_trim(void *rmem, mem_size_t newsize)
   LWIP_MEM_FREE_PROTECT();
 
   mem2 = (struct mem *)(void *)&ram[mem->next];
-  if(mem2->used == 0) {
+  if (mem2->used == 0) {
     /* The next struct is unused, we can simply move it at little */
     mem_size_t next;
     /* remember the old next pointer */
@@ -489,7 +489,7 @@ mem_trim(void *rmem, mem_size_t newsize)
   /* else {
     next struct mem is used but size between mem and mem2 is not big enough
     to create another struct mem
-    -> don't do anyhting. 
+    -> don't do anyhting.
     -> the remaining space stays unused since it is too small
   } */
 #if LWIP_ALLOW_MEM_FREE_FROM_OTHER_CONTEXT
@@ -526,7 +526,7 @@ mem_malloc(mem_size_t size)
      adjust for alignment. */
   size = LWIP_MEM_ALIGN_SIZE(size);
 
-  if(size < MIN_SIZE_ALIGNED) {
+  if (size < MIN_SIZE_ALIGNED) {
     /* every data block must be at least MIN_SIZE_ALIGNED long */
     size = MIN_SIZE_ALIGNED;
   }
@@ -641,7 +641,7 @@ mem_malloc_adjust_lfree:
     }
 #if LWIP_ALLOW_MEM_FREE_FROM_OTHER_CONTEXT
     /* if we got interrupted by a mem_free, try again */
-  } while(local_mem_free_count != 0);
+  } while (local_mem_free_count != 0);
 #endif /* LWIP_ALLOW_MEM_FREE_FROM_OTHER_CONTEXT */
   LWIP_DEBUGF(MEM_DEBUG | LWIP_DBG_LEVEL_SERIOUS, ("mem_malloc: could not allocate %"S16_F" bytes\n", (s16_t)size));
   MEM_STATS_INC(err);

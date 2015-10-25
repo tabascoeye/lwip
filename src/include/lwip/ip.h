@@ -1,8 +1,8 @@
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
- * All rights reserved. 
- * 
- * Redistribution and use in source and binary forms, with or without modification, 
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
  *
  * 1. Redistributions of source code must retain the above copyright notice,
@@ -11,21 +11,21 @@
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
  * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission. 
+ *    derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED 
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT 
- * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT 
- * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
- * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
  * OF SUCH DAMAGE.
  *
  * This file is part of the lwIP TCP/IP stack.
- * 
+ *
  * Author: Adam Dunkels <adam@sics.se>
  *
  */
@@ -131,11 +131,11 @@ struct ip_globals
   struct netif *current_input_netif;
 #if LWIP_IPV4
   /** Header of the input packet currently being processed. */
-  const struct ip_hdr *current_ip4_header;
+  struct ip_hdr *current_ip4_header;
 #endif /* LWIP_IPV4 */
 #if LWIP_IPV6
   /** Header of the input IPv6 packet currently being processed. */
-  const struct ip6_hdr *current_ip6_header;
+  struct ip6_hdr *current_ip6_header;
 #endif /* LWIP_IPV6 */
   /** Total header length of current_ip4/6_header (i.e. after this, the UDP/TCP header starts) */
   u16_t current_ip_header_tot_len;
@@ -167,11 +167,11 @@ extern struct ip_globals ip_data;
 /** Get the IPv4 header of the current packet.
  * This function must only be called from a receive callback (udp_recv,
  * raw_recv, tcp_accept). It will return NULL otherwise. */
-#define ip4_current_header()     (ip_data.current_ip4_header)
+#define ip4_current_header()     ((const struct ip_hdr*)(ip_data.current_ip4_header))
 /** Get the IPv6 header of the current packet.
  * This function must only be called from a receive callback (udp_recv,
  * raw_recv, tcp_accept). It will return NULL otherwise. */
-#define ip6_current_header()      (ip_data.current_ip6_header)
+#define ip6_current_header()      ((const struct ip6_hdr*)(ip_data.current_ip6_header))
 /** Returns TRUE if the current IP input packet is IPv6, FALSE if it is IPv4 */
 #define ip_current_is_v6()        (ip6_current_header() != NULL)
 /** Source IPv6 address of current_header */
@@ -183,11 +183,13 @@ extern struct ip_globals ip_data;
                                    IP6H_NEXTH(ip6_current_header()) :\
                                    IPH_PROTO(ip4_current_header()))
 /** Get the transport layer header */
-#define ip_next_header_ptr()     ((void*)((ip_current_is_v6() ? \
-  (u8_t*)ip6_current_header() : (u8_t*)ip4_current_header())  + ip_current_header_tot_len()))
+#define ip_next_header_ptr()     ((const void*)((ip_current_is_v6() ? \
+  (const u8_t*)ip6_current_header() : (const u8_t*)ip4_current_header())  + ip_current_header_tot_len()))
 
 /** Set an IP_PCB to IPv6 (IPv4 is the default) */
-#define ip_set_v6(pcb, val)       do{if(pcb != NULL) { pcb->isipv6 = val; }}while(0)
+#define ip_set_v6(pcb, val)       do{if(pcb != NULL) { pcb->isipv6 = val; \
+  IP_SET_TYPE(&(pcb)->local_ip,  (val)?IPADDR_TYPE_V6:IPADDR_TYPE_V4); \
+  IP_SET_TYPE(&(pcb)->remote_ip, (val)?IPADDR_TYPE_V6:IPADDR_TYPE_V4); }}while(0)
 
 /** Source IP4 address of current_header */
 #define ip4_current_src_addr()     (ip_2_ip4(&ip_data.current_iphdr_src))
@@ -199,13 +201,13 @@ extern struct ip_globals ip_data;
 /** Get the IPv4 header of the current packet.
  * This function must only be called from a receive callback (udp_recv,
  * raw_recv, tcp_accept). It will return NULL otherwise. */
-#define ip4_current_header()     (ip_data.current_ip4_header)
+#define ip4_current_header()     ((const struct ip_hdr*)(ip_data.current_ip4_header))
 /** Always returns FALSE when only supporting IPv4 only */
 #define ip_current_is_v6()        0
 /** Get the transport layer protocol */
 #define ip_current_header_proto() IPH_PROTO(ip4_current_header())
 /** Get the transport layer header */
-#define ip_next_header_ptr()     ((void*)((u8_t*)ip4_current_header() + ip_current_header_tot_len()))
+#define ip_next_header_ptr()     ((const void*)((const u8_t*)ip4_current_header() + ip_current_header_tot_len()))
 /** Source IP4 address of current_header */
 #define ip4_current_src_addr()     (&ip_data.current_iphdr_src)
 /** Destination IP4 address of current_header */
@@ -216,13 +218,13 @@ extern struct ip_globals ip_data;
 /** Get the IPv6 header of the current packet.
  * This function must only be called from a receive callback (udp_recv,
  * raw_recv, tcp_accept). It will return NULL otherwise. */
-#define ip6_current_header()      (ip_data.current_ip6_header)
+#define ip6_current_header()      ((const struct ip6_hdr*)(ip_data.current_ip6_header))
 /** Always returns TRUE when only supporting IPv6 only */
 #define ip_current_is_v6()        1
 /** Get the transport layer protocol */
 #define ip_current_header_proto() IP6H_NEXTH(ip6_current_header())
 /** Get the transport layer header */
-#define ip_next_header_ptr()     ((void*)((u8_t*)ip6_current_header()))
+#define ip_next_header_ptr()     ((const void*)((const u8_t*)ip6_current_header()))
 /** Source IP6 address of current_header */
 #define ip6_current_src_addr()    (&ip_data.current_iphdr_src)
 /** Destination IP6 address of current_header */
@@ -262,12 +264,11 @@ extern struct ip_globals ip_data;
 #define ip_route(isipv6, src, dest) \
         ((isipv6) ? \
         ip6_route(ip_2_ip6(src), ip_2_ip6(dest)) : \
-        ip4_route(ip_2_ip4(dest)))
-#define ip_netif_get_local_ip(isipv6, netif, dest, storage) ((isipv6) ? \
-        ip6_2_ip(ip6_netif_get_local_ip(netif, ip_2_ip6(dest)), storage) : \
-        ip4_2_ip(ip4_netif_get_local_ip(netif), storage))
+        ip4_route_src(ip_2_ip4(dest), ip_2_ip4(src)))
+#define ip_netif_get_local_ip(isipv6, netif, dest) ((isipv6) ? \
+        ip6_netif_get_local_ip(netif, ip_2_ip6(dest)) : \
+        ip4_netif_get_local_ip(netif))
 #define ip_debug_print(is_ipv6, p) ((is_ipv6) ? ip6_debug_print(p) : ip4_debug_print(p))
-err_t ip_input(struct pbuf *p, struct netif *inp);
 #elif LWIP_IPV4 /* LWIP_IPV4 && LWIP_IPV6 */
 #define ip_output(isipv6, p, src, dest, ttl, tos, proto) \
         ip4_output(p, src, dest, ttl, tos, proto)
@@ -278,11 +279,10 @@ err_t ip_input(struct pbuf *p, struct netif *inp);
 #define ip_output_hinted(isipv6, p, src, dest, ttl, tos, proto, addr_hint) \
         ip4_output_hinted(p, src, dest, ttl, tos, proto, addr_hint)
 #define ip_route(isipv6, src, dest) \
-        ip4_route(dest)
-#define ip_netif_get_local_ip(isipv6, netif, dest, storage) \
+        ip4_route_src(dest, src)
+#define ip_netif_get_local_ip(isipv6, netif, dest) \
         ip4_netif_get_local_ip(netif)
 #define ip_debug_print(is_ipv6, p) ip4_debug_print(p)
-#define ip_input(p, inp) ip4_input(p, inp)
 #elif LWIP_IPV6 /* LWIP_IPV4 && LWIP_IPV6 */
 #define ip_output(isipv6, p, src, dest, ttl, tos, proto) \
         ip6_output(p, src, dest, ttl, tos, proto)
@@ -294,16 +294,17 @@ err_t ip_input(struct pbuf *p, struct netif *inp);
         ip6_output_hinted(p, src, dest, ttl, tos, proto, addr_hint)
 #define ip_route(isipv6, src, dest) \
         ip6_route(src, dest)
-#define ip_netif_get_local_ip(isipv6, netif, dest, storage) \
+#define ip_netif_get_local_ip(isipv6, netif, dest) \
         ip6_netif_get_local_ip(netif, dest)
 #define ip_debug_print(is_ipv6, p) ip6_debug_print(p)
-#define ip_input(p, inp) ip6_input(p, inp)
 #endif /* LWIP_IPV6 */
 
-#define ip_route_get_local_ip(isipv6, src, dest, netif, ipaddr, storage) do { \
+#define ip_route_get_local_ip(isipv6, src, dest, netif, ipaddr) do { \
   (netif) = ip_route(isipv6, src, dest); \
-  (ipaddr) = ip_netif_get_local_ip(isipv6, netif, dest, storage); \
+  (ipaddr) = ip_netif_get_local_ip(isipv6, netif, dest); \
 }while(0)
+
+err_t ip_input(struct pbuf *p, struct netif *inp);
 
 #ifdef __cplusplus
 }

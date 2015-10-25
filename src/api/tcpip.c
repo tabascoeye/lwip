@@ -40,11 +40,12 @@
 
 #if !NO_SYS /* don't build if not configured for use in lwipopts.h */
 
+#include "lwip/tcpip.h"
+#include "lwip/priv/tcpip_priv.h"
 #include "lwip/sys.h"
 #include "lwip/memp.h"
 #include "lwip/mem.h"
 #include "lwip/pbuf.h"
-#include "lwip/tcpip.h"
 #include "lwip/init.h"
 #include "lwip/ip.h"
 #include "netif/etharp.h"
@@ -374,7 +375,7 @@ tcpip_apimsg(struct api_msg *apimsg)
   /* catch functions that don't set err */
   apimsg->msg.err = ERR_VAL;
 #endif
-  
+
   if (sys_mbox_valid_val(mbox)) {
     TCPIP_MSG_VAR_ALLOC(msg);
     TCPIP_MSG_VAR_REF(msg).type = TCPIP_MSG_API;
@@ -382,7 +383,7 @@ tcpip_apimsg(struct api_msg *apimsg)
 #if LWIP_NETCONN_SEM_PER_THREAD
     apimsg->msg.op_completed_sem = LWIP_NETCONN_THREAD_SEM_GET();
     LWIP_ASSERT("netconn semaphore not initialized",
-      apimsg->msg.op_completed_sem != SYS_SEM_NULL);
+      sys_sem_valid(apimsg->msg.op_completed_sem));
 #endif
     sys_mbox_post(&mbox, &TCPIP_MSG_VAR_REF(msg));
     sys_arch_sem_wait(LWIP_API_MSG_SEM(&apimsg->msg), 0);
@@ -417,7 +418,7 @@ tcpip_netifapi(struct netifapi_msg* netifapimsg)
       netifapimsg->msg.err = err;
       return err;
     }
-    
+
     TCPIP_MSG_VAR_REF(msg).type = TCPIP_MSG_NETIFAPI;
     TCPIP_MSG_VAR_REF(msg).msg.netifapimsg = netifapimsg;
     sys_mbox_post(&mbox, &TCPIP_MSG_VAR_REF(msg));
@@ -440,7 +441,7 @@ tcpip_netifapi(struct netifapi_msg* netifapimsg)
 err_t
 tcpip_netifapi_lock(struct netifapi_msg* netifapimsg)
 {
-  LOCK_TCPIP_CORE();  
+  LOCK_TCPIP_CORE();
   netifapimsg->function(&(netifapimsg->msg));
   UNLOCK_TCPIP_CORE();
   return netifapimsg->msg.err;
@@ -506,7 +507,8 @@ tcpip_pppapi_lock(struct pppapi_msg* pppapimsg)
  * @param ctx parameter passed to function
  * @return a struct pointer to pass to tcpip_trycallback().
  */
-struct tcpip_callback_msg* tcpip_callbackmsg_new(tcpip_callback_fn function, void *ctx)
+struct tcpip_callback_msg*
+tcpip_callbackmsg_new(tcpip_callback_fn function, void *ctx)
 {
   struct tcpip_msg *msg = (struct tcpip_msg *)memp_malloc(MEMP_TCPIP_MSG_API);
   if (msg == NULL) {
@@ -523,7 +525,8 @@ struct tcpip_callback_msg* tcpip_callbackmsg_new(tcpip_callback_fn function, voi
  *
  * @param msg the message to free
  */
-void tcpip_callbackmsg_delete(struct tcpip_callback_msg* msg)
+void
+tcpip_callbackmsg_delete(struct tcpip_callback_msg* msg)
 {
   memp_free(MEMP_TCPIP_MSG_API, msg);
 }
@@ -559,11 +562,11 @@ tcpip_init(tcpip_init_done_fn initfunc, void *arg)
 
   tcpip_init_done = initfunc;
   tcpip_init_done_arg = arg;
-  if(sys_mbox_new(&mbox, TCPIP_MBOX_SIZE) != ERR_OK) {
+  if (sys_mbox_new(&mbox, TCPIP_MBOX_SIZE) != ERR_OK) {
     LWIP_ASSERT("failed to create tcpip_thread mbox", 0);
   }
 #if LWIP_TCPIP_CORE_LOCKING
-  if(sys_mutex_new(&lock_tcpip_core) != ERR_OK) {
+  if (sys_mutex_new(&lock_tcpip_core) != ERR_OK) {
     LWIP_ASSERT("failed to create lock_tcpip_core", 0);
   }
 #endif /* LWIP_TCPIP_CORE_LOCKING */
