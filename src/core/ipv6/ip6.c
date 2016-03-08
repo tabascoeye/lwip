@@ -59,11 +59,6 @@
 #include "lwip/debug.h"
 #include "lwip/stats.h"
 
-#if !LWIP_IPV4
-/** Global data for IPv6 only */
-struct ip_globals ip_data;
-#endif /* !LWIP_IPV4 */
-
 /**
  * Finds the appropriate network interface for a given IPv6 address. It tries to select
  * a netif following a sequence of heuristics:
@@ -85,13 +80,6 @@ ip6_route(const ip6_addr_t *src, const ip6_addr_t *dest)
 {
   struct netif *netif;
   s8_t i;
-
-#ifdef LWIP_HOOK_IP6_ROUTE
-  netif = LWIP_HOOK_IP6_ROUTE(src, dest);
-  if (netif != NULL) {
-    return netif;
-  }
-#endif
 
   /* If single netif configuration, fast return. */
   if ((netif_list != NULL) && (netif_list->next == NULL)) {
@@ -130,6 +118,14 @@ ip6_route(const ip6_addr_t *src, const ip6_addr_t *dest)
     }
     return netif_default;
   }
+
+  /* we come here for non-link-local addresses */
+#ifdef LWIP_HOOK_IP6_ROUTE
+  netif = LWIP_HOOK_IP6_ROUTE(src, dest);
+  if (netif != NULL) {
+    return netif;
+  }
+#endif
 
   /* See if the destination subnet matches a configured address. */
   for (netif = netif_list; netif != NULL; netif = netif->next) {
@@ -189,7 +185,7 @@ ip6_route(const ip6_addr_t *src, const ip6_addr_t *dest)
 #endif /* LWIP_NETIF_LOOPBACK && !LWIP_HAVE_LOOPIF */
 
   /* no matching netif found, use default netif, if up */
-  if (!netif_is_up(netif_default) || !netif_is_link_up(netif_default)) {
+  if ((netif_default == NULL) || !netif_is_up(netif_default) || !netif_is_link_up(netif_default)) {
     return NULL;
   }
   return netif_default;
@@ -373,18 +369,6 @@ ip6_forward(struct pbuf *p, struct ip6_hdr *iphdr, struct netif *inp)
   return;
 }
 #endif /* LWIP_IPV6_FORWARD */
-
-#if !LWIP_IPV4
-/* If both IP versions are enabled, this function can dispatch packets to the correct one.
- * If only IPv6 is enabled, this directly maps at ip6_input.
- * May be used as netif input function.
- */
-err_t
-ip_input(struct pbuf *p, struct netif *inp)
-{
-  return ip6_input(p, inp);
-}
-#endif /* !LWIP_IPV4 */
 
 /**
  * This function is called by the network interface device driver when

@@ -49,6 +49,7 @@
 #include "lwip/ip.h"
 #include "lwip/raw.h"
 #include "lwip/udp.h"
+#include "lwip/priv/api_msg.h"
 #include "lwip/priv/tcp_priv.h"
 #include "lwip/priv/tcpip_priv.h"
 
@@ -61,6 +62,35 @@
 #define API_MSG_VAR_FREE(name)            API_VAR_FREE(MEMP_API_MSG, name)
 
 static err_t netconn_close_shutdown(struct netconn *conn, u8_t how);
+
+#if !LWIP_TCPIP_CORE_LOCKING
+/**
+ * Call the lower part of a netconn_* function
+ * This function is then running in the thread context
+ * of tcpip_thread and has exclusive access to lwIP core code.
+ *
+ * @param apimsg a struct containing the function to call and its parameters
+ * @return ERR_OK if the function was called, another err_t if not
+ */
+static err_t
+tcpip_apimsg(struct api_msg *apimsg)
+{
+#ifdef LWIP_DEBUG
+  /* catch functions that don't set err */
+  apimsg->msg.err = ERR_VAL;
+#endif
+#if LWIP_NETCONN_SEM_PER_THREAD
+  apimsg->msg.op_completed_sem = LWIP_NETCONN_THREAD_SEM_GET();
+  LWIP_ASSERT("netconn semaphore not initialized",
+    sys_sem_valid(apimsg->msg.op_completed_sem));
+#endif
+  
+  if (tcpip_send_api_msg(apimsg->function, &apimsg->msg, LWIP_API_MSG_SEM(&apimsg->msg)) == ERR_OK) {
+    return apimsg->msg.err;
+  }
+  return ERR_VAL;
+}
+#endif /* !LWIP_TCPIP_CORE_LOCKING */
 
 /**
  * Create a new netconn (of a specific type) that has a callback function.
@@ -200,15 +230,15 @@ netconn_bind(struct netconn *conn, const ip_addr_t *addr, u16_t port)
 {
   API_MSG_VAR_DECLARE(msg);
   err_t err;
-
+  
   LWIP_ERROR("netconn_bind: invalid conn", (conn != NULL), return ERR_ARG;);
 
-  API_MSG_VAR_ALLOC(msg);
-#if LWIP_MPU_COMPATIBLE
+  /* Don't propagate NULL pointer (IP_ADDR_ANY alias) to subsequent functions */
   if (addr == NULL) {
     addr = IP_ADDR_ANY;
   }
-#endif /* LWIP_MPU_COMPATIBLE */
+
+  API_MSG_VAR_ALLOC(msg);
   API_MSG_VAR_REF(msg).msg.conn = conn;
   API_MSG_VAR_REF(msg).msg.msg.bc.ipaddr = API_MSG_VAR_REF(addr);
   API_MSG_VAR_REF(msg).msg.msg.bc.port = port;
@@ -234,12 +264,12 @@ netconn_connect(struct netconn *conn, const ip_addr_t *addr, u16_t port)
 
   LWIP_ERROR("netconn_connect: invalid conn", (conn != NULL), return ERR_ARG;);
 
-  API_MSG_VAR_ALLOC(msg);
-#if LWIP_MPU_COMPATIBLE
+  /* Don't propagate NULL pointer (IP_ADDR_ANY alias) to subsequent functions */
   if (addr == NULL) {
     addr = IP_ADDR_ANY;
   }
-#endif /* LWIP_MPU_COMPATIBLE */
+
+  API_MSG_VAR_ALLOC(msg);
   API_MSG_VAR_REF(msg).msg.conn = conn;
   API_MSG_VAR_REF(msg).msg.msg.bc.ipaddr = API_MSG_VAR_REF(addr);
   API_MSG_VAR_REF(msg).msg.msg.bc.port = port;
@@ -721,11 +751,13 @@ netconn_close_shutdown(struct netconn *conn, u8_t how)
 {
   API_MSG_VAR_DECLARE(msg);
   err_t err;
+  LWIP_UNUSED_ARG(how);
 
   LWIP_ERROR("netconn_close: invalid conn",  (conn != NULL), return ERR_ARG;);
 
   API_MSG_VAR_ALLOC(msg);
   API_MSG_VAR_REF(msg).msg.conn = conn;
+#if LWIP_TCP
   /* shutting down both ends is the same as closing */
   API_MSG_VAR_REF(msg).msg.msg.sd.shut = how;
 #if LWIP_SO_SNDTIMEO || LWIP_SO_LINGER
@@ -736,6 +768,7 @@ netconn_close_shutdown(struct netconn *conn, u8_t how)
   API_MSG_VAR_REF(msg).msg.msg.sd.polls_left =
     ((LWIP_TCP_CLOSE_TIMEOUT_MS_DEFAULT + TCP_SLOW_INTERVAL - 1) / TCP_SLOW_INTERVAL) + 1;
 #endif /* LWIP_SO_SNDTIMEO || LWIP_SO_LINGER */
+#endif /* LWIP_TCP */
   TCPIP_APIMSG(&API_MSG_VAR_REF(msg), lwip_netconn_do_close, err);
   API_MSG_VAR_FREE(msg);
 
@@ -790,14 +823,15 @@ netconn_join_leave_group(struct netconn *conn,
   LWIP_ERROR("netconn_join_leave_group: invalid conn",  (conn != NULL), return ERR_ARG;);
 
   API_MSG_VAR_ALLOC(msg);
-#if LWIP_MPU_COMPATIBLE
+
+  /* Don't propagate NULL pointer (IP_ADDR_ANY alias) to subsequent functions */
   if (multiaddr == NULL) {
     multiaddr = IP_ADDR_ANY;
   }
   if (netif_addr == NULL) {
     netif_addr = IP_ADDR_ANY;
   }
-#endif /* LWIP_MPU_COMPATIBLE */
+
   API_MSG_VAR_REF(msg).msg.conn = conn;
   API_MSG_VAR_REF(msg).msg.msg.jl.multiaddr = API_MSG_VAR_REF(multiaddr);
   API_MSG_VAR_REF(msg).msg.msg.jl.netif_addr = API_MSG_VAR_REF(netif_addr);
@@ -865,7 +899,14 @@ netconn_gethostbyname(const char *name, ip_addr_t *addr)
   }
 #endif /* LWIP_NETCONN_SEM_PER_THREAD */
 
-  tcpip_callback(lwip_netconn_do_gethostbyname, &API_VAR_REF(msg));
+  err = tcpip_callback(lwip_netconn_do_gethostbyname, &API_VAR_REF(msg));
+  if (err != ERR_OK) {
+#if !LWIP_NETCONN_SEM_PER_THREAD
+    sys_sem_free(API_EXPR_REF(API_VAR_REF(msg).sem));
+#endif /* !LWIP_NETCONN_SEM_PER_THREAD */
+    API_VAR_FREE(MEMP_DNS_API_MSG, msg);
+    return err;
+  }
   sys_sem_wait(API_EXPR_REF_SEM(API_VAR_REF(msg).sem));
 #if !LWIP_NETCONN_SEM_PER_THREAD
   sys_sem_free(API_EXPR_REF(API_VAR_REF(msg).sem));

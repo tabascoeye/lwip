@@ -37,18 +37,15 @@
 #if !NO_SYS /* don't build if not configured for use in lwipopts.h */
 
 #include "lwip/tcpip.h"
-#include "lwip/priv/api_msg.h"
-#include "lwip/netifapi.h"
-#include "lwip/pppapi.h"
-#include "lwip/pbuf.h"
-#include "lwip/api.h"
 #include "lwip/sys.h"
 #include "lwip/timers.h"
-#include "lwip/netif.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+  
+struct pbuf;
+struct netif;
 
 /** Define this to something that triggers a watchdog. This is called from
  * tcpip_thread after processing a message. */
@@ -61,44 +58,10 @@ extern "C" {
 extern sys_mutex_t lock_tcpip_core;
 #define LOCK_TCPIP_CORE()     sys_mutex_lock(&lock_tcpip_core)
 #define UNLOCK_TCPIP_CORE()   sys_mutex_unlock(&lock_tcpip_core)
-#ifdef LWIP_DEBUG
-#define TCIP_APIMSG_SET_ERR(m, e) (m)->msg.err = e  /* catch functions that don't set err */
-#else
-#define TCIP_APIMSG_SET_ERR(m, e)
-#endif
-#if LWIP_NETCONN_SEM_PER_THREAD
-#define TCPIP_APIMSG_SET_SEM(m) ((m)->msg.op_completed_sem = LWIP_NETCONN_THREAD_SEM_GET())
-#else
-#define TCPIP_APIMSG_SET_SEM(m)
-#endif
-#define TCPIP_APIMSG_NOERR(m,f) do { \
-  TCIP_APIMSG_SET_ERR(m, ERR_VAL); \
-  TCPIP_APIMSG_SET_SEM(m); \
-  LOCK_TCPIP_CORE(); \
-  f(&((m)->msg)); \
-  UNLOCK_TCPIP_CORE(); \
-} while(0)
-#define TCPIP_APIMSG(m,f,e)   do { \
-  TCPIP_APIMSG_NOERR(m,f); \
-  (e) = (m)->msg.err; \
-} while(0)
-#define TCPIP_APIMSG_ACK(m)   NETCONN_SET_SAFE_ERR((m)->conn, (m)->err)
-#define TCPIP_NETIFAPI(m)     tcpip_netifapi_lock(m)
-#define TCPIP_NETIFAPI_ACK(m)
-#define TCPIP_PPPAPI(m)       tcpip_pppapi_lock(m)
-#define TCPIP_PPPAPI_ACK(m)
 #else /* LWIP_TCPIP_CORE_LOCKING */
 #define LOCK_TCPIP_CORE()
 #define UNLOCK_TCPIP_CORE()
-#define TCPIP_APIMSG_NOERR(m,f) do { (m)->function = f; tcpip_apimsg(m); } while(0)
-#define TCPIP_APIMSG(m,f,e)   do { (m)->function = f; (e) = tcpip_apimsg(m); } while(0)
-#define TCPIP_APIMSG_ACK(m)   do { NETCONN_SET_SAFE_ERR((m)->conn, (m)->err); sys_sem_signal(LWIP_API_MSG_SEM(m)); } while(0)
-#define TCPIP_NETIFAPI(m)     tcpip_netifapi(m)
-#define TCPIP_NETIFAPI_ACK(m) sys_sem_signal(&m->sem)
-#define TCPIP_PPPAPI(m)       tcpip_pppapi(m)
-#define TCPIP_PPPAPI_ACK(m)   sys_sem_signal(&m->sem)
 #endif /* LWIP_TCPIP_CORE_LOCKING */
-
 
 #if LWIP_MPU_COMPATIBLE
 #define API_VAR_REF(name)               (*(name))
@@ -132,44 +95,13 @@ extern sys_mutex_t lock_tcpip_core;
 #define API_EXPR_DEREF(expr)            *(expr)
 #endif /* LWIP_MPU_COMPATIBLE */
 
-
-#if LWIP_NETCONN || LWIP_SOCKET
-err_t tcpip_apimsg(struct api_msg *apimsg);
-#endif /* LWIP_NETCONN || LWIP_SOCKET */
-
-#if PPPOS_SUPPORT && !PPP_INPROC_IRQ_SAFE
-err_t tcpip_pppos_input(struct pbuf *p, struct netif *inp);
-#endif /* PPPOS_SUPPORT && !PPP_INPROC_IRQ_SAFE */
-
-#if LWIP_NETIF_API
-err_t tcpip_netifapi(struct netifapi_msg *netifapimsg);
-#if LWIP_TCPIP_CORE_LOCKING
-err_t tcpip_netifapi_lock(struct netifapi_msg *netifapimsg);
-#endif /* LWIP_TCPIP_CORE_LOCKING */
-#endif /* LWIP_NETIF_API */
-
-#if LWIP_PPP_API
-err_t tcpip_pppapi(struct pppapi_msg *pppapimsg);
-#if LWIP_TCPIP_CORE_LOCKING
-err_t tcpip_pppapi_lock(struct pppapi_msg *pppapimsg);
-#endif /* LWIP_TCPIP_CORE_LOCKING */
-#endif /* LWIP_PPP_API */
-
+#if !LWIP_TCPIP_CORE_LOCKING
+err_t tcpip_send_api_msg(tcpip_callback_fn fn, void *apimsg, sys_sem_t* sem);
+#endif /* !LWIP_TCPIP_CORE_LOCKING */
 
 enum tcpip_msg_type {
-#if LWIP_NETCONN || LWIP_SOCKET
   TCPIP_MSG_API,
-#endif /* LWIP_NETCONN || LWIP_SOCKET */
   TCPIP_MSG_INPKT,
-#if PPPOS_SUPPORT && !PPP_INPROC_IRQ_SAFE
-  TCPIP_MSG_INPKT_PPPOS,
-#endif /* PPPOS_SUPPORT && !PPP_INPROC_IRQ_SAFE */
-#if LWIP_NETIF_API
-  TCPIP_MSG_NETIFAPI,
-#endif /* LWIP_NETIF_API */
-#if LWIP_PPP_API
-  TCPIP_MSG_PPPAPI,
-#endif /* LWIP_PPP_API */
 #if LWIP_TCPIP_TIMEOUT
   TCPIP_MSG_TIMEOUT,
   TCPIP_MSG_UNTIMEOUT,
@@ -180,20 +112,15 @@ enum tcpip_msg_type {
 
 struct tcpip_msg {
   enum tcpip_msg_type type;
-  sys_sem_t *sem;
   union {
-#if LWIP_NETCONN || LWIP_SOCKET
-    struct api_msg *apimsg;
-#endif /* LWIP_NETCONN || LWIP_SOCKET */
-#if LWIP_NETIF_API
-    struct netifapi_msg *netifapimsg;
-#endif /* LWIP_NETIF_API */
-#if LWIP_PPP_API
-    struct pppapi_msg *pppapimsg;
-#endif /* LWIP_PPP_API */
+    struct {
+      tcpip_callback_fn function;
+      void* msg;
+    } api;
     struct {
       struct pbuf *p;
       struct netif *netif;
+      netif_input_fn input_fn;
     } inp;
     struct {
       tcpip_callback_fn function;

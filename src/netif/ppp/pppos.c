@@ -41,7 +41,7 @@
 #include "lwip/sys.h"
 #include "lwip/memp.h"
 #include "lwip/netif.h"
-#include "lwip/snmp_mib2.h"
+#include "lwip/snmp.h"
 #include "lwip/priv/tcpip_priv.h"
 #include "lwip/api.h"
 #include "lwip/ip4.h" /* for ip4_input() */
@@ -184,6 +184,7 @@ ppp_pcb *pppos_create(struct netif *pppif, pppos_output_cb_fn output_cb,
     return NULL;
   }
 
+  memset(pppos, 0, sizeof(pppos_pcb));
   pppos->ppp = ppp;
   pppos->output_cb = output_cb;
   return ppp;
@@ -443,7 +444,7 @@ pppos_input_tcpip(ppp_pcb *ppp, u8_t *s, int l)
   }
   pbuf_take(p, s, l);
 
-  err = tcpip_pppos_input(p, ppp_netif(ppp));
+  err = tcpip_inpkt(p, ppp_netif(ppp), pppos_input_sys);
   if (err != ERR_OK) {
      pbuf_free(p);
   }
@@ -808,9 +809,9 @@ pppos_input_drop(pppos_pcb *pppos)
     PPPDEBUG(LOG_INFO, ("pppos_input_drop: pbuf len=%d, addr %p\n", pppos->in_head->len, (void*)pppos->in_head));
   }
   pppos_input_free_current_packet(pppos);
-#if VJ_SUPPORT
+#if VJ_SUPPORT && LWIP_TCP
   vj_uncompress_err(&pppos->ppp->vj_comp);
-#endif /* VJ_SUPPORT */
+#endif /* VJ_SUPPORT && LWIP_TCP */
 
   LINK_STATS_INC(link.drop);
   MIB2_STATS_NETIF_INC(pppos->ppp->netif, ifindiscards);
@@ -894,4 +895,5 @@ failed:
   pbuf_free(nb);
   return err;
 }
+
 #endif /* PPP_SUPPORT && PPPOS_SUPPORT */

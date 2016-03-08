@@ -85,14 +85,14 @@ typedef struct _lwiperf_settings {
 /** Basic connection handle */
 struct _lwiperf_state_base;
 typedef struct _lwiperf_state_base lwiperf_state_base_t;
-typedef struct _lwiperf_state_base {
+struct _lwiperf_state_base {
   /* 1=tcp, 0=udp */
   u8_t tcp;
   /* 1=server, 0=client */
   u8_t server;
   lwiperf_state_base_t* next;
   lwiperf_state_base_t* related_server_state;
-} lwiperf_state_base_t;
+};
 
 /** Connection handle for a TCP iperf session */
 typedef struct _lwiperf_state_tcp {
@@ -112,7 +112,7 @@ typedef struct _lwiperf_state_tcp {
 /** List of active iperf sessions */
 static lwiperf_state_base_t* lwiperf_all_connections;
 /** A const buffer to send from: we want to measure sending, not copying! */
-const u8_t lwiperf_txbuf_const[1600] = {
+static const u8_t lwiperf_txbuf_const[1600] = {
   '0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9',
   '0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9',
   '0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9','0','1','2','3','4','5','6','7','8','9',
@@ -518,6 +518,7 @@ lwiperf_tcp_poll(void *arg, struct tcp_pcb *tpcb)
   LWIP_UNUSED_ARG(tpcb);
   if (++conn->poll_count >= LWIPERF_TCP_MAX_IDLE_SEC) {
     lwiperf_tcp_close(conn, LWIPERF_TCP_ABORTED_LOCAL);
+    return ERR_OK; /* lwiperf_tcp_close frees conn */
   }
 
   if (!conn->base.server) {
@@ -586,7 +587,13 @@ lwiperf_start_tcp_server(const ip_addr_t* local_addr, u16_t local_port,
 {
   err_t err;
   struct tcp_pcb* pcb;
-  lwiperf_state_tcp_t* s = (lwiperf_state_tcp_t*)LWIPERF_ALLOC(lwiperf_state_tcp_t);
+  lwiperf_state_tcp_t* s;
+
+  if(local_addr == NULL) {
+    return NULL;
+  }
+
+  s = (lwiperf_state_tcp_t*)LWIPERF_ALLOC(lwiperf_state_tcp_t);
   if (s == NULL) {
     return NULL;
   }

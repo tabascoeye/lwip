@@ -291,7 +291,7 @@ igmp_lookfor_group(struct netif *ifp, const ip4_addr_t *addr)
 struct igmp_group *
 igmp_lookup_group(struct netif *ifp, const ip4_addr_t *addr)
 {
-  struct igmp_group *group = igmp_group_list;
+  struct igmp_group *group;
 
   /* Search if the group already exists */
   group = igmp_lookfor_group(ifp, addr);
@@ -719,23 +719,16 @@ igmp_timeout(struct igmp_group *group)
 static void
 igmp_start_timer(struct igmp_group *group, u8_t max_time)
 {
-  /* ensure the input value is > 0 */
 #ifdef LWIP_RAND
-  if (max_time == 0) {
-    max_time = 1;
-  }
-  /* ensure the random value is > 0 */
-  group->timer = (LWIP_RAND() % max_time);
-  if (group->timer == 0) {
-    group->timer = 1;
-  }
+  group->timer = max_time > 2 ? (LWIP_RAND() % max_time) : 1;
 #else /* LWIP_RAND */
   /* ATTENTION: use this only if absolutely necessary! */
   group->timer = max_time / 2;
+#endif /* LWIP_RAND */
+
   if (group->timer == 0) {
     group->timer = 1;
   }
-#endif /* LWIP_RAND */
 }
 
 /**

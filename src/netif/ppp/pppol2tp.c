@@ -57,7 +57,7 @@
 #include "lwip/memp.h"
 #include "lwip/netif.h"
 #include "lwip/udp.h"
-#include "lwip/snmp_mib2.h"
+#include "lwip/snmp.h"
 
 #include "netif/ppp/ppp_impl.h"
 #include "netif/ppp/lcp.h"
@@ -129,14 +129,9 @@ ppp_pcb *pppol2tp_create(struct netif *pppif,
     goto memp_malloc_l2tp_failed;
   }
 
-  ppp = ppp_new(pppif, &pppol2tp_callbacks, l2tp, link_status_cb, ctx_cb);
-  if (ppp == NULL) {
-    goto ppp_new_failed;
-  }
-
 #if LWIP_IPV6
   if (IP_IS_V6_VAL(*ipaddr)) {
-    udp = udp_new_ip6();
+    udp = udp_new_ip_type(IPADDR_TYPE_V6);
   } else
 #endif /* LWIP_IPV6 */
   udp = udp_new();
@@ -144,6 +139,11 @@ ppp_pcb *pppol2tp_create(struct netif *pppif,
     goto udp_new_failed;
   }
   udp_recv(udp, pppol2tp_input, l2tp);
+
+  ppp = ppp_new(pppif, &pppol2tp_callbacks, l2tp, link_status_cb, ctx_cb);
+  if (ppp == NULL) {
+    goto ppp_new_failed;
+  }
 
   memset(l2tp, 0, sizeof(pppol2tp_pcb));
   l2tp->phase = PPPOL2TP_STATE_INITIAL;
@@ -159,9 +159,9 @@ ppp_pcb *pppol2tp_create(struct netif *pppif,
 
   return ppp;
 
-udp_new_failed:
-  ppp_free(ppp);
 ppp_new_failed:
+  udp_remove(udp);
+udp_new_failed:
   memp_free(MEMP_PPPOL2TP_PCB, l2tp);
 memp_malloc_l2tp_failed:
 ipaddr_check_failed:
@@ -308,7 +308,7 @@ static err_t pppol2tp_connect(ppp_pcb *ppp, void *ctx) {
    * because the L2TP LNS might answer with its own random source port (!= 1701)
    */
 #if LWIP_IPV6
-  if (PCB_ISIPV6(l2tp->udp)) {
+  if (IP_IS_V6_VAL(l2tp->udp->local_ip)) {
     udp_bind(l2tp->udp, IP6_ADDR_ANY, 0);
   } else
 #endif /* LWIP_IPV6 */

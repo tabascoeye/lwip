@@ -816,7 +816,7 @@ dns_alloc_random_port(void)
     }
     err = udp_bind(ret, IP_ADDR_ANY, port);
   } while (err == ERR_USE);
-  if ((err != ERR_OK) && (err != ERR_USE)) {
+  if (err != ERR_OK) {
     udp_remove(ret);
     return NULL;
   }
@@ -851,8 +851,7 @@ dns_alloc_pcb(void)
   }
   /* if we come here, creating a new UDP pcb failed, so we have to use
      an already existing one */
-  idx = dns_last_pcb_idx + 1;
-  for (i = 0; i < DNS_MAX_SOURCE_PORTS; i++) {
+  for (i = 0, idx = dns_last_pcb_idx + 1; i < DNS_MAX_SOURCE_PORTS; i++, idx++) {
     if (idx >= DNS_MAX_SOURCE_PORTS) {
       idx = 0;
     }
@@ -1130,7 +1129,7 @@ dns_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, 
         /* skip the rest of the "question" part */
         res_idx += SIZEOF_DNS_QUERY;
 
-        while (nanswers > 0) {
+        while ((nanswers > 0) && (res_idx < p->tot_len)) {
           /* skip answer resource record's host name */
           res_idx = dns_parse_name(p, res_idx);
 
@@ -1405,7 +1404,6 @@ err_t
 dns_gethostbyname(const char *hostname, ip_addr_t *addr, dns_found_callback found,
                   void *callback_arg)
 {
-#if LWIP_IPV4 && LWIP_IPV6
   return dns_gethostbyname_addrtype(hostname, addr, found, callback_arg, LWIP_DNS_ADDRTYPE_DEFAULT);
 }
 
@@ -1419,7 +1417,6 @@ err_t
 dns_gethostbyname_addrtype(const char *hostname, ip_addr_t *addr, dns_found_callback found,
                            void *callback_arg, u8_t dns_addrtype)
 {
-#endif /* LWIP_IPV4 && LWIP_IPV6 */
   size_t hostnamelen;
   /* not initialized or no valid server yet, or invalid addr pointer
    * or invalid hostname or invalid hostname length */
@@ -1473,20 +1470,17 @@ dns_gethostbyname_addrtype(const char *hostname, ip_addr_t *addr, dns_found_call
       return ERR_OK;
     }
   }
+#else /* LWIP_IPV4 && LWIP_IPV6 */
+  LWIP_UNUSED_ARG(dns_addrtype);
 #endif /* LWIP_IPV4 && LWIP_IPV6 */
+
+  /* prevent calling found callback if no server is set, return error instead */
+  if (ip_addr_isany_val(dns_servers[0])) {
+    return ERR_VAL;
+  }
 
   /* queue query with specified callback */
   return dns_enqueue(hostname, hostnamelen, found, callback_arg LWIP_DNS_ADDRTYPE_ARG(dns_addrtype));
 }
-
-#if !LWIP_IPV4 || !LWIP_IPV6
-err_t
-dns_gethostbyname_addrtype(const char *hostname, ip_addr_t *addr, dns_found_callback found,
-                           void *callback_arg, u8_t dns_addrtype)
-{
-  LWIP_UNUSED_ARG(dns_addrtype);
-  return dns_gethostbyname(hostname, addr, found, callback_arg);
-}
-#endif /* LWIP_IPV4 && LWIP_IPV6 */
 
 #endif /* LWIP_DNS */

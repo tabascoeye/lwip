@@ -62,7 +62,7 @@
 #include "lwip/icmp.h"
 #include "lwip/icmp6.h"
 #include "lwip/stats.h"
-#include "lwip/snmp_mib2.h"
+#include "lwip/snmp.h"
 #include "lwip/dhcp.h"
 
 #include <string.h>
@@ -138,6 +138,66 @@ again:
 #endif
 }
 
+/** Common code to see if the current input packet matches the pcb
+ * (current input packet is accessed via ip(4/6)_current_* macros)
+ *
+ * @param pcb pcb to check
+ * @param inp network interface on which the datagram was received (only used for IPv4)
+ * @param broadcast 1 if his is an IPv4 broadcast (global or subnet-only), 0 otherwise (only used for IPv4)
+ * @return 1 on match, 0 otherwise
+ */
+static u8_t
+udp_input_local_match(struct udp_pcb *pcb, struct netif *inp, u8_t broadcast)
+{
+  LWIP_UNUSED_ARG(inp);       /* in IPv6 only case */
+  LWIP_UNUSED_ARG(broadcast); /* in IPv6 only case */
+
+  /* Dual-stack: PCBs listening to any IP type also listen to any IP address */
+  if(IP_IS_ANY_TYPE_VAL(pcb->local_ip)) {
+#if LWIP_IPV4 && IP_SOF_BROADCAST_RECV
+    if((broadcast != 0) && !ip_get_option(pcb, SOF_BROADCAST)) {
+      return 0;
+    }
+#endif /* LWIP_IPV4 && IP_SOF_BROADCAST_RECV */
+    return 1;
+  }
+
+  /* Only need to check PCB if incoming IP version matches PCB IP version */
+  if(IP_ADDR_PCB_VERSION_MATCH_EXACT(pcb, ip_current_dest_addr())) {
+    LWIP_ASSERT("UDP PCB: inconsistent local/remote IP versions", IP_IS_V6_VAL(pcb->local_ip) == IP_IS_V6_VAL(pcb->remote_ip));
+
+#if LWIP_IPV4
+    /* Special case: IPv4 broadcast: all or broadcasts in my subnet
+     * Note: broadcast variable can only be 1 if it is an IPv4 broadcast */
+    if(broadcast != 0) {
+#if IP_SOF_BROADCAST_RECV
+      if(ip_get_option(pcb, SOF_BROADCAST))
+#endif /* IP_SOF_BROADCAST_RECV */
+      {
+        if(ip4_addr_isany(ip_2_ip4(&pcb->local_ip)) ||
+          ((ip4_current_dest_addr()->addr == IPADDR_BROADCAST)) ||
+           ip4_addr_netcmp(ip_2_ip4(&pcb->local_ip), ip4_current_dest_addr(), netif_ip4_netmask(inp))) {
+          return 1;
+        }
+      }
+    } else
+#endif /* LWIP_IPV4 */
+    /* Handle IPv4 and IPv6: all, multicast or exact match */
+    if(ip_addr_isany(&pcb->local_ip) ||
+#if LWIP_IPV6_MLD
+       (ip_current_is_v6() && ip6_addr_ismulticast(ip6_current_dest_addr())) ||
+#endif /* LWIP_IPV6_MLD */
+#if LWIP_IGMP
+       (!ip_current_is_v6() && ip4_addr_ismulticast(ip4_current_dest_addr())) ||
+#endif /* LWIP_IGMP */
+       ip_addr_cmp(&pcb->local_ip, ip_current_dest_addr())) {
+      return 1;
+    }
+  }
+  
+  return 0;
+}
+
 /**
  * Process an incoming UDP datagram.
  *
@@ -157,11 +217,8 @@ udp_input(struct pbuf *p, struct netif *inp)
   struct udp_pcb *pcb, *prev;
   struct udp_pcb *uncon_pcb;
   u16_t src, dest;
-  u8_t local_match;
-#if LWIP_IPV4
   u8_t broadcast;
-#endif /* LWIP_IPV4 */
-  u8_t for_us;
+  u8_t for_us = 0;
 
   LWIP_UNUSED_ARG(inp);
 
@@ -183,10 +240,8 @@ udp_input(struct pbuf *p, struct netif *inp)
 
   udphdr = (struct udp_hdr *)p->payload;
 
-#if LWIP_IPV4
   /* is broadcast packet ? */
   broadcast = ip_addr_isbroadcast(ip_current_dest_addr(), ip_current_netif());
-#endif /* LWIP_IPV4 */
 
   LWIP_DEBUGF(UDP_DEBUG, ("udp_input: received datagram of length %"U16_F"\n", p->tot_len));
 
@@ -203,91 +258,34 @@ udp_input(struct pbuf *p, struct netif *inp)
   ip_addr_debug_print(UDP_DEBUG, ip_current_src_addr());
   LWIP_DEBUGF(UDP_DEBUG, (", %"U16_F")\n", ntohs(udphdr->src)));
 
-#if LWIP_DHCP
   pcb = NULL;
-  /* when LWIP_DHCP is active, packets to DHCP_CLIENT_PORT may only be processed by
-     the dhcp module, no other UDP pcb may use the local UDP port DHCP_CLIENT_PORT */
-  if (dest == DHCP_CLIENT_PORT) {
-    /* all packets for DHCP_CLIENT_PORT not coming from DHCP_SERVER_PORT are dropped! */
-    if (src == DHCP_SERVER_PORT) {
-      if ((inp->dhcp != NULL) && (inp->dhcp->pcb != NULL)) {
-        /* accept the packet if
-           (- broadcast or directed to us) -> DHCP is link-layer-addressed, local ip is always ANY!
-           - inp->dhcp->pcb->remote == ANY or iphdr->src
-           (no need to check for IPv6 since the dhcp struct always uses IPv4) */
-        if (ip_addr_isany_val(inp->dhcp->pcb->remote_ip) ||
-            ip_addr_cmp(&inp->dhcp->pcb->remote_ip, ip_current_src_addr())) {
-          pcb = inp->dhcp->pcb;
-        }
-      }
-    }
-  } else
-#endif /* LWIP_DHCP */
-  {
-    prev = NULL;
-    local_match = 0;
-    uncon_pcb = NULL;
-    /* Iterate through the UDP pcb list for a matching pcb.
-     * 'Perfect match' pcbs (connected to the remote port & ip address) are
-     * preferred. If no perfect match is found, the first unconnected pcb that
-     * matches the local port and ip address gets the datagram. */
-    for (pcb = udp_pcbs; pcb != NULL; pcb = pcb->next) {
-      local_match = 0;
-      /* print the PCB local and remote address */
-      LWIP_DEBUGF(UDP_DEBUG, ("pcb ("));
-      ip_addr_debug_print(UDP_DEBUG, &pcb->local_ip);
-      LWIP_DEBUGF(UDP_DEBUG, (", %"U16_F") <-- (", pcb->local_port));
-      ip_addr_debug_print(UDP_DEBUG, &pcb->remote_ip);
-      LWIP_DEBUGF(UDP_DEBUG, (", %"U16_F")\n", pcb->remote_port));
+  prev = NULL;
+  uncon_pcb = NULL;
+  /* Iterate through the UDP pcb list for a matching pcb.
+   * 'Perfect match' pcbs (connected to the remote port & ip address) are
+   * preferred. If no perfect match is found, the first unconnected pcb that
+   * matches the local port and ip address gets the datagram. */
+  for (pcb = udp_pcbs; pcb != NULL; pcb = pcb->next) {
+    /* print the PCB local and remote address */
+    LWIP_DEBUGF(UDP_DEBUG, ("pcb ("));
+    ip_addr_debug_print(UDP_DEBUG, &pcb->local_ip);
+    LWIP_DEBUGF(UDP_DEBUG, (", %"U16_F") <-- (", pcb->local_port));
+    ip_addr_debug_print(UDP_DEBUG, &pcb->remote_ip);
+    LWIP_DEBUGF(UDP_DEBUG, (", %"U16_F")\n", pcb->remote_port));
 
-      /* compare PCB local addr+port to UDP destination addr+port */
-      if (pcb->local_port == dest) {
-        if (
-#if LWIP_IPV6
-          (PCB_ISIPV6(pcb) && (ip_current_is_v6()) &&
-            (ip6_addr_isany(ip_2_ip6(&pcb->local_ip)) ||
-#if LWIP_IPV6_MLD
-            ip6_addr_ismulticast(ip6_current_dest_addr()) ||
-#endif /* LWIP_IPV6_MLD */
-            ip6_addr_cmp(ip_2_ip6(&pcb->local_ip), ip6_current_dest_addr())))
-#endif /* LWIP_IPV6 */
-#if LWIP_IPV4 && LWIP_IPV6
-           || (!PCB_ISIPV6(pcb) &&
-            (ip4_current_header() != NULL) &&
-#endif /* LWIP_IPV4 && LWIP_IPV6 */
-#if LWIP_IPV4
-#if !LWIP_IPV6
-            (
-#endif /* !LWIP_IPV6 */
-            ((!broadcast && ip_addr_isany(&pcb->local_ip)) ||
-            ip_addr_cmp(&pcb->local_ip, ip_current_dest_addr()) ||
-#if LWIP_IGMP
-            (ip_addr_isany(&pcb->local_ip) && ip_addr_ismulticast(ip_current_dest_addr())) ||
-#endif /* LWIP_IGMP */
-#if IP_SOF_BROADCAST_RECV
-            (broadcast && ip_get_option(pcb, SOF_BROADCAST) &&
-             (ip_addr_isany(&pcb->local_ip) ||
-              ip_addr_netcmp(&pcb->local_ip, ip_current_dest_addr(), netif_ip4_netmask(inp))))))
-#else /* IP_SOF_BROADCAST_RECV */
-            (broadcast &&
-             (ip_addr_isany(&pcb->local_ip) ||
-              ip_addr_netcmp(&pcb->local_ip, ip_current_dest_addr(), netif_ip4_netmask(inp))))))
-#endif /* IP_SOF_BROADCAST_RECV */
-#endif /* LWIP_IPV4 */
-              ) {
-          local_match = 1;
-          if ((uncon_pcb == NULL) &&
-              ((pcb->flags & UDP_FLAGS_CONNECTED) == 0)) {
-            /* the first unconnected matching PCB */
-            uncon_pcb = pcb;
-          }
-        }
+    /* compare PCB local addr+port to UDP destination addr+port */
+    if ((pcb->local_port == dest) &&
+        (udp_input_local_match(pcb, inp, broadcast) != 0)) {
+      if ((uncon_pcb == NULL) &&
+          ((pcb->flags & UDP_FLAGS_CONNECTED) == 0)) {
+        /* the first unconnected matching PCB */
+        uncon_pcb = pcb;
       }
+
       /* compare PCB remote addr+port to UDP source addr+port */
-      if ((local_match != 0) &&
-          (pcb->remote_port == src) && IP_PCB_IPVER_INPUT_MATCH(pcb) &&
-            (ip_addr_isany_val(pcb->remote_ip) ||
-              ip_addr_cmp(&pcb->remote_ip, ip_current_src_addr()))) {
+      if ((pcb->remote_port == src) &&
+          (ip_addr_isany_val(pcb->remote_ip) ||
+          ip_addr_cmp(&pcb->remote_ip, ip_current_src_addr()))) {
         /* the first fully matching PCB */
         if (prev != NULL) {
           /* move the pcb to the front of udp_pcbs so that is
@@ -300,12 +298,13 @@ udp_input(struct pbuf *p, struct netif *inp)
         }
         break;
       }
-      prev = pcb;
     }
-    /* no fully matching pcb found? then look for an unconnected pcb */
-    if (pcb == NULL) {
-      pcb = uncon_pcb;
-    }
+
+    prev = pcb;
+  }
+  /* no fully matching pcb found? then look for an unconnected pcb */
+  if (pcb == NULL) {
+    pcb = uncon_pcb;
   }
 
   /* Check checksum if this is a match or if it was directed at us. */
@@ -316,16 +315,14 @@ udp_input(struct pbuf *p, struct netif *inp)
     if (ip_current_is_v6()) {
       for_us = netif_get_ip6_addr_match(inp, ip6_current_dest_addr()) >= 0;
     }
-#if LWIP_IPV4
-    else
-#endif /* LWIP_IPV4 */
 #endif /* LWIP_IPV6 */
 #if LWIP_IPV4
-    {
+    if (!ip_current_is_v6()) {
       for_us = ip4_addr_cmp(netif_ip4_addr(inp), ip4_current_dest_addr());
     }
 #endif /* LWIP_IPV4 */
   }
+
   if (for_us) {
     LWIP_DEBUGF(UDP_DEBUG | LWIP_DBG_TRACE, ("udp_input: calculating checksum\n"));
 #if CHECKSUM_CHECK_UDP
@@ -371,18 +368,12 @@ udp_input(struct pbuf *p, struct netif *inp)
       pbuf_free(p);
       goto end;
     }
+
     if (pcb != NULL) {
       MIB2_STATS_INC(mib2.udpindatagrams);
 #if SO_REUSE && SO_REUSE_RXTOALL
-      if ((
-#if LWIP_IPV4
-        broadcast ||
-#endif /* LWIP_IPV4 */
-#if LWIP_IPV6
-          ip6_addr_ismulticast(ip6_current_dest_addr()) ||
-#endif /* LWIP_IPV6 */
-           ip_addr_ismulticast(ip_current_dest_addr())) &&
-          ip_get_option(pcb, SOF_REUSEADDR)) {
+      if (ip_get_option(pcb, SOF_REUSEADDR) &&
+          (broadcast || ip_addr_ismulticast(ip_current_dest_addr()))) {
         /* pass broadcast- or multicast packets to all multicast pcbs
            if SOF_REUSEADDR is set on the first match */
         struct udp_pcb *mpcb;
@@ -392,32 +383,7 @@ udp_input(struct pbuf *p, struct netif *inp)
           if (mpcb != pcb) {
             /* compare PCB local addr+port to UDP destination addr+port */
             if ((mpcb->local_port == dest) &&
-#if LWIP_IPV6
-                ((PCB_ISIPV6(mpcb) &&
-                  (ip6_addr_ismulticast(ip6_current_dest_addr()) ||
-                   ip6_addr_cmp(ip_2_ip6(&mpcb->local_ip), ip6_current_dest_addr()))) ||
-                 (!PCB_ISIPV6(mpcb) &&
-#else /* LWIP_IPV6 */
-                ((
-#endif /* LWIP_IPV6 */
-                  ((
-#if LWIP_IPV4
-                  !broadcast &&
-#endif /* LWIP_IPV4 */
-                  ip_addr_isany(&mpcb->local_ip)) ||
-                   ip_addr_cmp(&mpcb->local_ip, ip_current_dest_addr()) ||
-#if LWIP_IGMP
-                   (ip_addr_isany(&pcb->local_ip) && ip_addr_ismulticast(ip_current_dest_addr())) ||
-#endif /* LWIP_IGMP */
-#if IP_SOF_BROADCAST_RECV
-                   (
-#if LWIP_IPV4
-                   broadcast &&
-#endif /* LWIP_IPV4 */
-                   ip_get_option(mpcb, SOF_BROADCAST)))))) {
-#else  /* IP_SOF_BROADCAST_RECV */
-                   (broadcast))))) {
-#endif /* IP_SOF_BROADCAST_RECV */
+                (udp_input_local_match(mpcb, inp, broadcast) != 0)) {
               /* pass a copy of the packet to all local matches */
               if (mpcb->recv != NULL) {
                 struct pbuf *q;
@@ -460,17 +426,7 @@ udp_input(struct pbuf *p, struct netif *inp)
 #if LWIP_ICMP || LWIP_ICMP6
       /* No match was found, send ICMP destination port unreachable unless
          destination address was broadcast/multicast. */
-      if (
-#if LWIP_IPV4
-          !broadcast && !ip_addr_ismulticast(ip_current_dest_addr())
-#if LWIP_IPV6
-          &&
-#endif /* LWIP_IPV6 */
-#endif /* LWIP_IPV4 */
-#if LWIP_IPV6
-          !ip6_addr_ismulticast(ip6_current_dest_addr())
-#endif /* LWIP_IPV6 */
-          ) {
+      if (!broadcast && !ip_addr_ismulticast(ip_current_dest_addr())) {
         /* move payload pointer back to ip header */
         pbuf_header_force(p, ip_current_header_tot_len() + UDP_HLEN);
         icmp_port_unreach(ip_current_is_v6(), p);
@@ -513,6 +469,7 @@ chkerr:
  * - ERR_OK. Successful. No error occurred.
  * - ERR_MEM. Out of memory.
  * - ERR_RTE. Could not find route to destination address.
+ * - ERR_VAL. No PCB or PCB is dual-stack
  * - More errors could be returned by lower protocol layers.
  *
  * @see udp_disconnect() udp_sendto()
@@ -520,6 +477,10 @@ chkerr:
 err_t
 udp_send(struct udp_pcb *pcb, struct pbuf *p)
 {
+  if ((pcb == NULL) || IP_IS_ANY_TYPE_VAL(pcb->remote_ip)) {
+    return ERR_VAL;
+  }
+
   /* send to the packet using remote ip and port stored in the pcb */
   return udp_sendto(pcb, p, &pcb->remote_ip, pcb->remote_port);
 }
@@ -531,6 +492,10 @@ err_t
 udp_send_chksum(struct udp_pcb *pcb, struct pbuf *p,
                 u8_t have_chksum, u16_t chksum)
 {
+  if ((pcb == NULL) || IP_IS_ANY_TYPE_VAL(pcb->remote_ip)) {
+    return ERR_VAL;
+  }
+
   /* send to the packet using remote ip and port stored in the pcb */
   return udp_sendto_chksum(pcb, p, &pcb->remote_ip, pcb->remote_port,
     have_chksum, chksum);
@@ -571,7 +536,7 @@ udp_sendto_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
   struct netif *netif;
   const ip_addr_t *dst_ip_route = dst_ip;
 
-  if ((pcb == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, dst_ip)) {
+  if ((pcb == NULL) || (dst_ip == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, dst_ip)) {
     return ERR_VAL;
   }
 
@@ -580,7 +545,7 @@ udp_sendto_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
 #if LWIP_IPV6 || (LWIP_IPV4 && LWIP_MULTICAST_TX_OPTIONS)
   if (ip_addr_ismulticast(dst_ip_route)) {
 #if LWIP_IPV6
-    if (PCB_ISIPV6(pcb)) {
+    if (IP_IS_V6(dst_ip)) {
       /* For multicast, find a netif based on source address. */
       dst_ip_route = &pcb->local_ip;
     } else
@@ -593,7 +558,7 @@ udp_sendto_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
          in pcb->multicast_ip that is used for routing. */
       if (!ip_addr_isany_val(pcb->multicast_ip) &&
           !ip4_addr_cmp(ip_2_ip4(&pcb->multicast_ip), IP4_ADDR_BROADCAST)) {
-        dst_ip_route = & pcb->multicast_ip;
+        dst_ip_route = &pcb->multicast_ip;
       }
 #endif /* LWIP_IPV4 && LWIP_MULTICAST_TX_OPTIONS */
     }
@@ -601,7 +566,7 @@ udp_sendto_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
 #endif /* LWIP_IPV6 || (LWIP_IPV4 && LWIP_MULTICAST_TX_OPTIONS) */
 
   /* find the outgoing network interface for this packet */
-  netif = ip_route(PCB_ISIPV6(pcb), &pcb->local_ip, dst_ip_route);
+  netif = ip_route(&pcb->local_ip, dst_ip_route);
 
   /* no outgoing network interface could be found? */
   if (netif == NULL) {
@@ -654,13 +619,13 @@ udp_sendto_if_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_i
 #endif /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
   const ip_addr_t *src_ip;
 
-  if ((pcb == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, dst_ip)) {
+  if ((pcb == NULL) || (dst_ip == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, dst_ip)) {
     return ERR_VAL;
   }
 
   /* PCB local address is IP_ANY_ADDR? */
 #if LWIP_IPV6
-  if (PCB_ISIPV6(pcb)) {
+  if (IP_IS_V6(dst_ip)) {
     if (ip6_addr_isany(ip_2_ip6(&pcb->local_ip))) {
       src_ip = ip6_select_source_address(netif, ip_2_ip6(dst_ip));
       if (src_ip == NULL) {
@@ -724,7 +689,7 @@ udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *d
   u8_t ip_proto;
   u8_t ttl;
 
-  if ((pcb == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, src_ip) ||
+  if ((pcb == NULL) || (dst_ip == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, src_ip) ||
       !IP_ADDR_PCB_VERSION_MATCH(pcb, dst_ip)) {
     return ERR_VAL;
   }
@@ -733,7 +698,7 @@ udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *d
   /* broadcast filter? */
   if (!ip_get_option(pcb, SOF_BROADCAST) &&
 #if LWIP_IPV6
-      !PCB_ISIPV6(pcb) &&
+      !IP_IS_V6(dst_ip) &&
 #endif /* LWIP_IPV6 */
       ip_addr_isbroadcast(dst_ip, netif)) {
     LWIP_DEBUGF(UDP_DEBUG | LWIP_DBG_LEVEL_SERIOUS,
@@ -848,7 +813,7 @@ udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *d
 #if CHECKSUM_GEN_UDP
     IF__NETIF_CHECKSUM_ENABLED(netif, NETIF_CHECKSUM_GEN_UDP) {
       /* Checksum is mandatory over IPv6. */
-      if (PCB_ISIPV6(pcb) || (pcb->flags & UDP_FLAGS_NOCHKSUM) == 0) {
+      if (IP_IS_V6(dst_ip) || (pcb->flags & UDP_FLAGS_NOCHKSUM) == 0) {
         u16_t udpchksum;
 #if LWIP_CHECKSUM_ON_COPY
         if (have_chksum) {
@@ -886,7 +851,7 @@ udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *d
   LWIP_DEBUGF(UDP_DEBUG, ("udp_send: ip_output_if (,,,,0x%02"X16_F",)\n", (u16_t)ip_proto));
   /* output to IP */
   NETIF_SET_HWADDRHINT(netif, &(pcb->addr_hint));
-  err = ip_output_if_src(PCB_ISIPV6(pcb), q, src_ip, dst_ip, ttl, pcb->tos, ip_proto, netif);
+  err = ip_output_if_src(q, src_ip, dst_ip, ttl, pcb->tos, ip_proto, netif);
   NETIF_SET_HWADDRHINT(netif, NULL);
 
   /* TODO: must this be increased even if error occurred? */
@@ -929,7 +894,15 @@ udp_bind(struct udp_pcb *pcb, const ip_addr_t *ipaddr, u16_t port)
   struct udp_pcb *ipcb;
   u8_t rebind;
 
-  if ((pcb == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, ipaddr)) {
+#if LWIP_IPV4
+  /* Don't propagate NULL pointer (IPv4 ANY) to subsequent functions */
+  if (ipaddr == NULL) {
+    ipaddr = IP_ADDR_ANY;
+  }
+#endif /* LWIP_IPV4 */
+
+  /* still need to check for ipaddr == NULL in IPv6 only case */
+  if ((pcb == NULL) || (ipaddr == NULL) || !IP_ADDR_PCB_VERSION_MATCH_EXACT(pcb, ipaddr)) {
     return ERR_VAL;
   }
 
@@ -942,36 +915,10 @@ udp_bind(struct udp_pcb *pcb, const ip_addr_t *ipaddr, u16_t port)
   for (ipcb = udp_pcbs; ipcb != NULL; ipcb = ipcb->next) {
     /* is this UDP PCB already on active list? */
     if (pcb == ipcb) {
-      /* pcb may occur at most once in active list */
-      LWIP_ASSERT("rebind == 0", rebind == 0);
-      /* pcb already in list, just rebind */
       rebind = 1;
-    }
-
-    /* By default, we don't allow to bind to a port that any other udp
-       PCB is already bound to, unless *all* PCBs with that port have tha
-       REUSEADDR flag set. */
-#if SO_REUSE
-    else if (!ip_get_option(pcb, SOF_REUSEADDR) &&
-             !ip_get_option(ipcb, SOF_REUSEADDR)) {
-#else /* SO_REUSE */
-    /* port matches that of PCB in list and REUSEADDR not set -> reject */
-    else {
-#endif /* SO_REUSE */
-      if ((ipcb->local_port == port) && IP_PCB_IPVER_EQ(pcb, ipcb) &&
-          /* IP address matches, or one is IP_ADDR_ANY? */
-            (ip_addr_isany(&ipcb->local_ip) ||
-             ip_addr_isany(ipaddr) ||
-             ip_addr_cmp(&ipcb->local_ip, ipaddr))) {
-        /* other PCB already binds to this local IP and port */
-        LWIP_DEBUGF(UDP_DEBUG,
-                    ("udp_bind: local port %"U16_F" already bound by another pcb\n", port));
-        return ERR_USE;
-      }
+      break;
     }
   }
-
-  ip_addr_set_ipaddr(&pcb->local_ip, ipaddr);
 
   /* no port specified? */
   if (port == 0) {
@@ -981,7 +928,35 @@ udp_bind(struct udp_pcb *pcb, const ip_addr_t *ipaddr, u16_t port)
       LWIP_DEBUGF(UDP_DEBUG, ("udp_bind: out of free UDP ports\n"));
       return ERR_USE;
     }
+  } else {
+    for (ipcb = udp_pcbs; ipcb != NULL; ipcb = ipcb->next) {
+      if (pcb != ipcb) {
+      /* By default, we don't allow to bind to a port that any other udp
+         PCB is already bound to, unless *all* PCBs with that port have tha
+         REUSEADDR flag set. */
+#if SO_REUSE
+        if (!ip_get_option(pcb, SOF_REUSEADDR) ||
+            !ip_get_option(ipcb, SOF_REUSEADDR))
+#endif /* SO_REUSE */
+        {
+          /* port matches that of PCB in list and REUSEADDR not set -> reject */
+          if ((ipcb->local_port == port) && (IP_IS_V6(ipaddr) == IP_IS_V6_VAL(ipcb->local_ip)) &&
+              /* IP address matches, or one is IP_ADDR_ANY? */
+                (ip_addr_isany(&ipcb->local_ip) ||
+                 ip_addr_isany(ipaddr) ||
+                 ip_addr_cmp(&ipcb->local_ip, ipaddr))) {
+            /* other PCB already binds to this local IP and port */
+            LWIP_DEBUGF(UDP_DEBUG,
+                        ("udp_bind: local port %"U16_F" already bound by another pcb\n", port));
+            return ERR_USE;
+          }
+        }
+      }
+    }
   }
+
+  ip_addr_set_ipaddr(&pcb->local_ip, ipaddr);
+
   pcb->local_port = port;
   mib2_udp_bind(pcb);
   /* pcb not active yet? */
@@ -1018,7 +993,7 @@ udp_connect(struct udp_pcb *pcb, const ip_addr_t *ipaddr, u16_t port)
 {
   struct udp_pcb *ipcb;
 
-  if ((pcb == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, ipaddr)) {
+  if ((pcb == NULL) || (ipaddr == NULL) || !IP_ADDR_PCB_VERSION_MATCH_EXACT(pcb, ipaddr)) {
     return ERR_VAL;
   }
 
@@ -1032,30 +1007,7 @@ udp_connect(struct udp_pcb *pcb, const ip_addr_t *ipaddr, u16_t port)
   ip_addr_set_ipaddr(&pcb->remote_ip, ipaddr);
   pcb->remote_port = port;
   pcb->flags |= UDP_FLAGS_CONNECTED;
-/** TODO: this functionality belongs in upper layers */
-#ifdef LWIP_UDP_TODO
-#if LWIP_IPV6
-  if (!PCB_ISIPV6(pcb))
-#endif /* LWIP_IPV6 */
-  {
-    /* Nail down local IP for netconn_addr()/getsockname() */
-    if (ip_addr_isany(&pcb->local_ip) && !ip_addr_isany(&pcb->remote_ip)) {
-      struct netif *netif;
 
-      if ((netif = ip_route(PCB_ISIPV6(pcb), (const ip_addr_t*)NULL, &pcb->remote_ip)) == NULL) {
-        LWIP_DEBUGF(UDP_DEBUG, ("udp_connect: No route to %s\n", ipaddr_ntoa(&pcb->remote_ip)));
-        UDP_STATS_INC(udp.rterr);
-        return ERR_RTE;
-      }
-      /** TODO: this will bind the udp pcb locally, to the interface which
-          is used to route output packets to the remote address. However, we
-          might want to accept incoming packets on any interface! */
-      ip_addr_set(&pcb->local_ip, ip_netif_get_local_ip(PCB_ISIPV6(pcb), netif, &pcb->remote_ip));
-    } else if (ip_addr_isany(&pcb->remote_ip)) {
-      ip_addr_set_any(PCB_ISIPV6(pcb), &pcb->local_ip);
-    }
-  }
-#endif
   LWIP_DEBUGF(UDP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("udp_connect: connected to "));
   ip_addr_debug_print(UDP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE,
                       &pcb->remote_ip);
@@ -1083,7 +1035,7 @@ void
 udp_disconnect(struct udp_pcb *pcb)
 {
   /* reset remote address association */
-  ip_addr_set_any(PCB_ISIPV6(pcb), &pcb->remote_ip);
+  ip_addr_set_any(IP_IS_V6_VAL(pcb->remote_ip), &pcb->remote_ip);
   pcb->remote_port = 0;
   /* mark PCB as unconnected */
   pcb->flags &= ~UDP_FLAGS_CONNECTED;
@@ -1131,6 +1083,7 @@ udp_remove(struct udp_pcb *pcb)
       if (pcb2->next != NULL && pcb2->next == pcb) {
         /* remove pcb from list */
         pcb2->next = pcb->next;
+        break;
       }
     }
   }
@@ -1165,26 +1118,30 @@ udp_new(void)
   return pcb;
 }
 
-#if LWIP_IPV6
 /**
- * Create a UDP PCB for IPv6.
+ * Create a UDP PCB for specific IP type.
  *
+ * @param type IP address type, see IPADDR_TYPE_XX definitions.
  * @return The UDP PCB which was created. NULL if the PCB data structure
  * could not be allocated.
  *
  * @see udp_remove()
  */
 struct udp_pcb *
-udp_new_ip6(void)
+udp_new_ip_type(u8_t type)
 {
   struct udp_pcb *pcb;
   pcb = udp_new();
-#if LWIP_IPV4
-  ip_set_v6(pcb, 1);
-#endif /* LWIP_IPV4 */
+#if LWIP_IPV4 && LWIP_IPV6
+  if(pcb != NULL) {
+    IP_SET_TYPE_VAL(pcb->local_ip,  type);
+    IP_SET_TYPE_VAL(pcb->remote_ip, type);
+  }
+#else
+  LWIP_UNUSED_ARG(type);
+#endif /* LWIP_IPV4 && LWIP_IPV6 */
   return pcb;
 }
-#endif /* LWIP_IPV6 */
 
 #if LWIP_IPV4
 /** This function is called from netif.c when address is changed

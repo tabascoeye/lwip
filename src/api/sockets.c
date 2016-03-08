@@ -298,18 +298,18 @@ static const int err_to_errno_table[] = {
   EALREADY,      /* ERR_ALREADY    -9      Already connecting.      */
   EISCONN,       /* ERR_ISCONN     -10     Conn already established.*/
   ENOTCONN,      /* ERR_CONN       -11     Not connected.           */
-  ECONNABORTED,  /* ERR_ABRT       -12     Connection aborted.      */
-  ECONNRESET,    /* ERR_RST        -13     Connection reset.        */
-  ENOTCONN,      /* ERR_CLSD       -14     Connection closed.       */
-  EIO,           /* ERR_ARG        -15     Illegal argument.        */
-  -1,            /* ERR_IF         -16     Low-level netif error    */
+  -1,            /* ERR_IF         -12     Low-level netif error    */
+  ECONNABORTED,  /* ERR_ABRT       -13     Connection aborted.      */
+  ECONNRESET,    /* ERR_RST        -14     Connection reset.        */
+  ENOTCONN,      /* ERR_CLSD       -15     Connection closed.       */
+  EIO            /* ERR_ARG        -16     Illegal argument.        */
 };
 
 #define ERR_TO_ERRNO_TABLE_SIZE LWIP_ARRAYSIZE(err_to_errno_table)
 
 #define err_to_errno(err) \
-  ((unsigned)(-(err)) < ERR_TO_ERRNO_TABLE_SIZE ? \
-    err_to_errno_table[-(err)] : EIO)
+  ((unsigned)(-(signed)(err)) < ERR_TO_ERRNO_TABLE_SIZE ? \
+    err_to_errno_table[-(signed)(err)] : EIO)
 
 #if LWIP_SOCKET_SET_ERRNO
 #ifndef set_errno
@@ -460,7 +460,6 @@ static void
 free_socket(struct lwip_sock *sock, int is_tcp)
 {
   void *lastdata;
-  SYS_ARCH_DECL_PROTECT(lev);
 
   lastdata         = sock->lastdata;
   sock->lastdata   = NULL;
@@ -468,9 +467,7 @@ free_socket(struct lwip_sock *sock, int is_tcp)
   sock->err        = 0;
 
   /* Protect socket array */
-  SYS_ARCH_PROTECT(lev);
-  sock->conn       = NULL;
-  SYS_ARCH_UNPROTECT(lev);
+  SYS_ARCH_SET(sock->conn, NULL);
   /* don't use 'sock' after this line, as another task might have allocated it */
 
   if (lastdata != NULL) {
@@ -556,6 +553,7 @@ lwip_accept(int s, struct sockaddr *addr, socklen_t *addrlen)
     if (err != ERR_OK) {
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_accept(%d): netconn_peer failed, err=%d\n", s, err));
       netconn_delete(newconn);
+      free_socket(nsock, 1);
       sock_set_errno(sock, err_to_errno(err));
       return -1;
     }
@@ -1073,27 +1071,28 @@ lwip_sendmsg(int s, const struct msghdr *msg, int flags)
     err = ERR_OK;
   }
 #else /* LWIP_NETIF_TX_SINGLE_PBUF */
-  /* create a chained netbuf from the IO vectors */
-  err = netbuf_ref(chain_buf, msg->msg_iov[0].iov_base, (u16_t)msg->msg_iov[0].iov_len);
-  if (err == ERR_OK) {
-    struct netbuf *tail_buf;
-    size = msg->msg_iov[0].iov_len;
-    for (i = 1; i < msg->msg_iovlen; i++) {
-      tail_buf = netbuf_new();
-      if (!tail_buf) {
-        err = ERR_MEM;
-        break;
-      } else {
-        err = netbuf_ref(tail_buf, msg->msg_iov[i].iov_base, (u16_t)msg->msg_iov[i].iov_len);
-        if (err == ERR_OK) {
-          netbuf_chain(chain_buf, tail_buf);
-          size += msg->msg_iov[i].iov_len;
-        } else {
-          netbuf_delete(tail_buf);
-          break;
-        }
-      }
+  /* create a chained netbuf from the IO vectors. NOTE: we assemble a pbuf chain
+     manually to avoid having to allocate, chain, and delete a netbuf for each iov */
+  for (i = 0; i < msg->msg_iovlen; i++) {
+    struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, 0, PBUF_REF);
+    if (p == NULL) {
+      err = ERR_MEM; /* let netbuf_delete() cleanup chain_buf */
+      break;
     }
+    p->payload = msg->msg_iov[i].iov_base;
+    LWIP_ASSERT("iov_len < u16_t", msg->msg_iov[i].iov_len <= 0xFFFF);
+    p->len = p->tot_len = (u16_t)msg->msg_iov[i].iov_len;
+    /* netbuf empty, add new pbuf */
+    if (chain_buf->p == NULL) {
+      chain_buf->p = chain_buf->ptr = p;
+    /* add pbuf to existing pbuf chain */
+    } else {
+      pbuf_cat(chain_buf->p, p);
+    }
+  }    
+  /* save size of total chain */
+  if (err == ERR_OK) {
+    size = netbuf_len(chain_buf);
   }
 #endif /* LWIP_NETIF_TX_SINGLE_PBUF */
 
@@ -1292,8 +1291,6 @@ lwip_writev(int s, const struct iovec *iov, int iovcnt)
  * set in the sets has events. On return, readset, writeset and exceptset have
  * the sockets enabled that had events.
  *
- * exceptset is not used for now!!!
- *
  * @param maxfdp1 the highest socket index in the sets
  * @param readset_in:    set of sockets to check for read events
  * @param writeset_in:   set of sockets to check for write events
@@ -1319,38 +1316,44 @@ lwip_selscan(int maxfdp1, fd_set *readset_in, fd_set *writeset_in, fd_set *excep
   /* Go through each socket in each list to count number of sockets which
      currently match */
   for (i = LWIP_SOCKET_OFFSET; i < maxfdp1; i++) {
-    void* lastdata = NULL;
-    s16_t rcvevent = 0;
-    u16_t sendevent = 0;
-    u16_t errevent = 0;
+    /* if this FD is not in the set, continue */
+    if (!(readset_in && FD_ISSET(i, readset_in)) &&
+        !(writeset_in && FD_ISSET(i, writeset_in)) &&
+        !(exceptset_in && FD_ISSET(i, exceptset_in))) {
+      continue;
+    }
     /* First get the socket's status (protected)... */
     SYS_ARCH_PROTECT(lev);
     sock = tryget_socket(i);
     if (sock != NULL) {
-      lastdata = sock->lastdata;
-      rcvevent = sock->rcvevent;
-      sendevent = sock->sendevent;
-      errevent = sock->errevent;
-    }
-    SYS_ARCH_UNPROTECT(lev);
-    /* ... then examine it: */
-    /* See if netconn of this socket is ready for read */
-    if (readset_in && FD_ISSET(i, readset_in) && ((lastdata != NULL) || (rcvevent > 0))) {
-      FD_SET(i, &lreadset);
-      LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_selscan: fd=%d ready for reading\n", i));
-      nready++;
-    }
-    /* See if netconn of this socket is ready for write */
-    if (writeset_in && FD_ISSET(i, writeset_in) && (sendevent != 0)) {
-      FD_SET(i, &lwriteset);
-      LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_selscan: fd=%d ready for writing\n", i));
-      nready++;
-    }
-    /* See if netconn of this socket had an error */
-    if (exceptset_in && FD_ISSET(i, exceptset_in) && (errevent != 0)) {
-      FD_SET(i, &lexceptset);
-      LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_selscan: fd=%d ready for exception\n", i));
-      nready++;
+      void* lastdata = sock->lastdata;
+      s16_t rcvevent = sock->rcvevent;
+      u16_t sendevent = sock->sendevent;
+      u16_t errevent = sock->errevent;
+      SYS_ARCH_UNPROTECT(lev);
+
+      /* ... then examine it: */
+      /* See if netconn of this socket is ready for read */
+      if (readset_in && FD_ISSET(i, readset_in) && ((lastdata != NULL) || (rcvevent > 0))) {
+        FD_SET(i, &lreadset);
+        LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_selscan: fd=%d ready for reading\n", i));
+        nready++;
+      }
+      /* See if netconn of this socket is ready for write */
+      if (writeset_in && FD_ISSET(i, writeset_in) && (sendevent != 0)) {
+        FD_SET(i, &lwriteset);
+        LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_selscan: fd=%d ready for writing\n", i));
+        nready++;
+      }
+      /* See if netconn of this socket had an error */
+      if (exceptset_in && FD_ISSET(i, exceptset_in) && (errevent != 0)) {
+        FD_SET(i, &lexceptset);
+        LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_selscan: fd=%d ready for exception\n", i));
+        nready++;
+      }
+    } else {
+      SYS_ARCH_UNPROTECT(lev);
+      /* continue on to next FD in list */
     }
   }
   /* copy local sets to the ones provided as arguments */
@@ -1373,6 +1376,9 @@ lwip_select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset,
   struct lwip_select_cb select_cb;
   int i;
   int maxfdp2;
+#if LWIP_NETCONN_SEM_PER_THREAD
+  int waited = 0;
+#endif
   SYS_ARCH_DECL_PROTECT(lev);
 
   LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_select(%d, %p, %p, %p, tvsec=%"S32_F" tvusec=%"S32_F")\n",
@@ -1423,7 +1429,7 @@ lwip_select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset,
       select_cb_list->prev = &select_cb;
     }
     select_cb_list = &select_cb;
-    /* Increasing this counter tells even_callback that the list has changed. */
+    /* Increasing this counter tells event_callback that the list has changed. */
     select_cb_ctr++;
 
     /* Now we can safely unprotect */
@@ -1470,6 +1476,9 @@ lwip_select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset,
         }
 
         waitres = sys_arch_sem_wait(SELECT_SEM_PTR(select_cb.sem), msectimeout);
+#if LWIP_NETCONN_SEM_PER_THREAD
+        waited = 1;
+#endif
       }
     }
 
@@ -1508,11 +1517,16 @@ lwip_select(int maxfdp1, fd_set *readset, fd_set *writeset, fd_set *exceptset,
       LWIP_ASSERT("select_cb.prev != NULL", select_cb.prev != NULL);
       select_cb.prev->next = select_cb.next;
     }
-    /* Increasing this counter tells even_callback that the list has changed. */
+    /* Increasing this counter tells event_callback that the list has changed. */
     select_cb_ctr++;
     SYS_ARCH_UNPROTECT(lev);
 
-#if !LWIP_NETCONN_SEM_PER_THREAD
+#if LWIP_NETCONN_SEM_PER_THREAD
+    if (select_cb.sem_signalled && (!waited || (waitres == SYS_ARCH_TIMEOUT))) {
+      /* don't leave the thread-local semaphore signalled */
+      sys_arch_sem_wait(select_cb.sem, 1);
+    }
+#else /* LWIP_NETCONN_SEM_PER_THREAD */
     sys_sem_free(&select_cb.sem);
 #endif /* LWIP_NETCONN_SEM_PER_THREAD */
 
@@ -1811,7 +1825,12 @@ lwip_getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen)
 #else
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).completed_sem = &sock->conn->op_completed;
 #endif
-  tcpip_callback(lwip_getsockopt_callback, &LWIP_SETGETSOCKOPT_DATA_VAR_REF(data));
+  err = tcpip_callback(lwip_getsockopt_callback, &LWIP_SETGETSOCKOPT_DATA_VAR_REF(data));
+  if (err != ERR_OK) {
+    LWIP_SETGETSOCKOPT_DATA_VAR_FREE(data);
+    sock_set_errno(sock, err_to_errno(err));
+    return -1;
+  }
   sys_arch_sem_wait((sys_sem_t*)(LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).completed_sem), 0);
 
   /* write back optlen and optval */
@@ -2092,7 +2111,7 @@ lwip_getsockopt_impl(int s, int level, int optname, void *optval, socklen_t *opt
       if (NETCONNTYPE_GROUP(netconn_type(sock->conn)) != NETCONN_TCP) {
         return ENOPROTOOPT;
       }
-      *(int*)optval = ((sock->conn->flags & NETCONN_FLAG_IPV6_V6ONLY) ? 1 : 0);
+      *(int*)optval = (netconn_get_ipv6only(sock->conn) ? 1 : 0);
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_getsockopt(%d, IPPROTO_IPV6, IPV6_V6ONLY) = %d\n",
                   s, *(int *)optval));
       break;
@@ -2215,7 +2234,12 @@ lwip_setsockopt(int s, int level, int optname, const void *optval, socklen_t opt
 #else
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).completed_sem = &sock->conn->op_completed;
 #endif
-  tcpip_callback(lwip_setsockopt_callback, &LWIP_SETGETSOCKOPT_DATA_VAR_REF(data));
+  err = tcpip_callback(lwip_setsockopt_callback, &LWIP_SETGETSOCKOPT_DATA_VAR_REF(data));
+  if (err != ERR_OK) {
+    LWIP_SETGETSOCKOPT_DATA_VAR_FREE(data);
+    sock_set_errno(sock, err_to_errno(err));
+    return -1;
+  }
   sys_arch_sem_wait((sys_sem_t*)(LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).completed_sem), 0);
 
   /* maybe lwip_getsockopt_internal has changed err */
@@ -2482,12 +2506,12 @@ lwip_setsockopt_impl(int s, int level, int optname, const void *optval, socklen_
       /* @todo: this does not work for datagram sockets, yet */
       LWIP_SOCKOPT_CHECK_OPTLEN_CONN_PCB_TYPE(sock, optlen, int, NETCONN_TCP);
       if (*(const int*)optval) {
-        sock->conn->flags |= NETCONN_FLAG_IPV6_V6ONLY;
+        netconn_set_ipv6only(sock->conn, 1);
       } else {
-        sock->conn->flags &= ~NETCONN_FLAG_IPV6_V6ONLY;
+        netconn_set_ipv6only(sock->conn, 0);
       }
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_IPV6, IPV6_V6ONLY, ..) -> %d\n",
-                  s, ((sock->conn->flags & NETCONN_FLAG_IPV6_V6ONLY) ? 1 : 0)));
+                  s, (netconn_get_ipv6only(sock->conn) ? 1 : 0)));
       break;
     default:
       LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_setsockopt(%d, IPPROTO_IPV6, UNIMPL: optname=0x%x, ..)\n",
@@ -2598,18 +2622,20 @@ lwip_ioctl(int s, long cmd, void *argp)
       struct pbuf *p;
       if (sock->lastdata) {
         p = ((struct netbuf *)sock->lastdata)->p;
+        *((int*)argp) = p->tot_len - sock->lastoffset;
       } else {
         struct netbuf *rxbuf;
         err_t err;
         if (sock->rcvevent <= 0) {
-          *((u16_t*)argp) = 0;
+          *((int*)argp) = 0;
         } else {
           err = netconn_recv(sock->conn, &rxbuf);
           if (err != ERR_OK) {
-            *((u16_t*)argp) = 0;
+            *((int*)argp) = 0;
           } else {
             sock->lastdata = rxbuf;
-            *((u16_t*)argp) = rxbuf->p->tot_len;
+            sock->lastoffset = 0;
+            *((int*)argp) = rxbuf->p->tot_len;
           }
         }
       }

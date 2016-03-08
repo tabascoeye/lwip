@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007-2009 Frédéric Bernon, Simon Goldschmidt
+ * Copyright (c) 2007-2009 Frï¿½dï¿½ric Bernon, Simon Goldschmidt
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -26,11 +26,11 @@
  *
  * This file is part of the lwIP TCP/IP stack.
  *
- * Author: Frédéric Bernon, Simon Goldschmidt
+ * Author: Frï¿½dï¿½ric Bernon, Simon Goldschmidt
  *
  */
-#ifndef LWIP_HDR_SNTP_H
-#define LWIP_HDR_SNTP_H
+#ifndef LWIP_HDR_APPS_SNTP_H
+#define LWIP_HDR_APPS_SNTP_H
 
 #include "lwip/apps/sntp_opts.h"
 #include "lwip/ip_addr.h"
@@ -44,6 +44,7 @@ extern "C" {
 #define SNTP_OPMODE_POLL            0
 #define SNTP_OPMODE_LISTENONLY      1
 void sntp_setoperatingmode(u8_t operating_mode);
+u8_t sntp_getoperatingmode(void);
 
 void sntp_init(void);
 void sntp_stop(void);
@@ -66,4 +67,4 @@ void sntp_servermode_dhcp(int set_servers_from_dhcp);
 }
 #endif
 
-#endif /* LWIP_HDR_SNTP_H */
+#endif /* LWIP_HDR_APPS_SNTP_H */

@@ -57,6 +57,47 @@
 /** The list of RAW PCBs */
 static struct raw_pcb *raw_pcbs;
 
+static u8_t
+raw_input_match(struct raw_pcb *pcb, u8_t broadcast)
+{
+  LWIP_UNUSED_ARG(broadcast); /* in IPv6 only case */
+
+  /* Dual-stack: PCBs listening to any IP type also listen to any IP address */
+  if(IP_IS_ANY_TYPE_VAL(pcb->local_ip)) {
+#if LWIP_IPV4 && IP_SOF_BROADCAST_RECV
+    if((broadcast != 0) && !ip_get_option(pcb, SOF_BROADCAST)) {
+      return 0;
+    }
+#endif /* LWIP_IPV4 && IP_SOF_BROADCAST_RECV */
+    return 1;
+  }
+  
+  /* Only need to check PCB if incoming IP version matches PCB IP version */
+  if(IP_ADDR_PCB_VERSION_MATCH_EXACT(pcb, ip_current_dest_addr())) {
+#if LWIP_IPV4
+    /* Special case: IPv4 broadcast: receive all broadcasts
+     * Note: broadcast variable can only be 1 if it is an IPv4 broadcast */
+    if(broadcast != 0) {
+#if IP_SOF_BROADCAST_RECV
+      if(ip_get_option(pcb, SOF_BROADCAST))
+#endif /* IP_SOF_BROADCAST_RECV */
+      {
+        if(ip4_addr_isany(ip_2_ip4(&pcb->local_ip))) {
+          return 1;
+        }
+      }
+    } else
+#endif /* LWIP_IPV4 */
+    /* Handle IPv4 and IPv6: catch all or exact match */
+    if(ip_addr_isany(&pcb->local_ip) ||
+       ip_addr_cmp(&pcb->local_ip, ip_current_dest_addr())) {
+      return 1;
+    }
+  }
+  
+  return 0;
+}
+
 /**
  * Determine if in incoming IP packet is covered by a RAW PCB
  * and if so, pass it to a user-provided receive callback function.
@@ -80,6 +121,7 @@ raw_input(struct pbuf *p, struct netif *inp)
   struct raw_pcb *pcb, *prev;
   s16_t proto;
   u8_t eaten = 0;
+  u8_t broadcast = ip_addr_isbroadcast(ip_current_dest_addr(), ip_current_netif());
 
   LWIP_UNUSED_ARG(inp);
 
@@ -106,46 +148,34 @@ raw_input(struct pbuf *p, struct netif *inp)
   /* loop through all raw pcbs until the packet is eaten by one */
   /* this allows multiple pcbs to match against the packet by design */
   while ((eaten == 0) && (pcb != NULL)) {
-    if ((pcb->protocol == proto) && IP_PCB_IPVER_INPUT_MATCH(pcb) &&
-        (ip_addr_isany(&pcb->local_ip) ||
-         ip_addr_cmp(&pcb->local_ip, ip_current_dest_addr()))) {
-#if IP_SOF_BROADCAST_RECV
-      /* broadcast filter? */
-      if ((ip_get_option(pcb, SOF_BROADCAST) || !ip_addr_isbroadcast(ip_current_dest_addr(), ip_current_netif()))
-#if LWIP_IPV6
-          || PCB_ISIPV6(pcb)
-#endif /* LWIP_IPV6 */
-          )
-#endif /* IP_SOF_BROADCAST_RECV */
-      {
-        /* receive callback function available? */
-        if (pcb->recv != NULL) {
+    if ((pcb->protocol == proto) && raw_input_match(pcb, broadcast)) {
+      /* receive callback function available? */
+      if (pcb->recv != NULL) {
 #ifndef LWIP_NOASSERT
-          void* old_payload = p->payload;
+        void* old_payload = p->payload;
 #endif
-          /* the receive callback function did not eat the packet? */
-          eaten = pcb->recv(pcb->recv_arg, pcb, p, ip_current_src_addr());
-          if (eaten != 0) {
-            /* receive function ate the packet */
-            p = NULL;
-            eaten = 1;
-            if (prev != NULL) {
-            /* move the pcb to the front of raw_pcbs so that is
-               found faster next time */
-              prev->next = pcb->next;
-              pcb->next = raw_pcbs;
-              raw_pcbs = pcb;
-            }
-          } else {
-            /* sanity-check that the receive callback did not alter the pbuf */
-            LWIP_ASSERT("raw pcb recv callback altered pbuf payload pointer without eating packet",
-              p->payload == old_payload);
+        /* the receive callback function did not eat the packet? */
+        eaten = pcb->recv(pcb->recv_arg, pcb, p, ip_current_src_addr());
+        if (eaten != 0) {
+          /* receive function ate the packet */
+          p = NULL;
+          eaten = 1;
+          if (prev != NULL) {
+          /* move the pcb to the front of raw_pcbs so that is
+             found faster next time */
+            prev->next = pcb->next;
+            pcb->next = raw_pcbs;
+            raw_pcbs = pcb;
           }
+        } else {
+          /* sanity-check that the receive callback did not alter the pbuf */
+          LWIP_ASSERT("raw pcb recv callback altered pbuf payload pointer without eating packet",
+            p->payload == old_payload);
         }
-        /* no receive callback function was set for this raw PCB */
       }
-      /* drop the packet */
+      /* no receive callback function was set for this raw PCB */
     }
+    /* drop the packet */
     prev = pcb;
     pcb = pcb->next;
   }
@@ -169,7 +199,7 @@ raw_input(struct pbuf *p, struct netif *inp)
 err_t
 raw_bind(struct raw_pcb *pcb, const ip_addr_t *ipaddr)
 {
-  if ((pcb == NULL) || (ipaddr == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, ipaddr)) {
+  if ((pcb == NULL) || (ipaddr == NULL) || !IP_ADDR_PCB_VERSION_MATCH_EXACT(pcb, ipaddr)) {
     return ERR_VAL;
   }
   ip_addr_set_ipaddr(&pcb->local_ip, ipaddr);
@@ -192,7 +222,7 @@ raw_bind(struct raw_pcb *pcb, const ip_addr_t *ipaddr)
 err_t
 raw_connect(struct raw_pcb *pcb, const ip_addr_t *ipaddr)
 {
-  if ((pcb == NULL) || (ipaddr == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, ipaddr)) {
+  if ((pcb == NULL) || (ipaddr == NULL) || !IP_ADDR_PCB_VERSION_MATCH_EXACT(pcb, ipaddr)) {
     return ERR_VAL;
   }
   ip_addr_set_ipaddr(&pcb->remote_ip, ipaddr);
@@ -250,7 +280,7 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *ipaddr)
 
   header_size = (
 #if LWIP_IPV4 && LWIP_IPV6
-    PCB_ISIPV6(pcb) ? IP6_HLEN : IP_HLEN);
+    IP_IS_V6(ipaddr) ? IP6_HLEN : IP_HLEN);
 #elif LWIP_IPV4
     IP_HLEN);
 #else
@@ -281,7 +311,7 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *ipaddr)
     }
   }
 
-  netif = ip_route(PCB_ISIPV6(pcb), &pcb->local_ip, dst_ip);
+  netif = ip_route(&pcb->local_ip, dst_ip);
   if (netif == NULL) {
     LWIP_DEBUGF(RAW_DEBUG | LWIP_DBG_LEVEL_WARNING, ("raw_sendto: No route to "));
     ip_addr_debug_print(RAW_DEBUG | LWIP_DBG_LEVEL_WARNING, dst_ip);
@@ -293,9 +323,7 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *ipaddr)
   }
 
 #if IP_SOF_BROADCAST
-#if LWIP_IPV6
-  if (!PCB_ISIPV6(pcb))
-#endif /* LWIP_IPV6 */
+  if (!IP_IS_V6(ipaddr))
   {
     /* broadcast filter? */
     if (!ip_get_option(pcb, SOF_BROADCAST) && ip_addr_isbroadcast(ipaddr, netif)) {
@@ -311,7 +339,7 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *ipaddr)
 
   if (ip_addr_isany(&pcb->local_ip)) {
     /* use outgoing network interface IP address as source address */
-    src_ip = ip_netif_get_local_ip(PCB_ISIPV6(pcb), netif, dst_ip);
+    src_ip = ip_netif_get_local_ip(netif, dst_ip);
 #if LWIP_IPV6
     if (src_ip == NULL) {
       if (q != p) {
@@ -328,7 +356,7 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *ipaddr)
 #if LWIP_IPV6
   /* If requested, based on the IPV6_CHECKSUM socket option per RFC3542,
      compute the checksum and update the checksum in the payload. */
-  if (PCB_ISIPV6(pcb) && pcb->chksum_reqd) {
+  if (IP_IS_V6(dst_ip) && pcb->chksum_reqd) {
     u16_t chksum = ip6_chksum_pseudo(p, pcb->protocol, p->tot_len, ip_2_ip6(src_ip), ip_2_ip6(dst_ip));
     LWIP_ASSERT("Checksum must fit into first pbuf", p->len >= (pcb->chksum_offset + 2));
     SMEMCPY(((u8_t *)p->payload) + pcb->chksum_offset, &chksum, sizeof(u16_t));
@@ -336,7 +364,7 @@ raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *ipaddr)
 #endif
 
   NETIF_SET_HWADDRHINT(netif, &pcb->addr_hint);
-  err = ip_output_if(PCB_ISIPV6(pcb), q, src_ip, dst_ip, pcb->ttl, pcb->tos, pcb->protocol, netif);
+  err = ip_output_if(q, src_ip, dst_ip, pcb->ttl, pcb->tos, pcb->protocol, netif);
   NETIF_SET_HWADDRHINT(netif, NULL);
 
   /* did we chain a header earlier? */
@@ -383,6 +411,7 @@ raw_remove(struct raw_pcb *pcb)
       if (pcb2->next != NULL && pcb2->next == pcb) {
         /* remove pcb from list */
         pcb2->next = pcb->next;
+        break;
       }
     }
   }
@@ -419,28 +448,32 @@ raw_new(u8_t proto)
   return pcb;
 }
 
-#if LWIP_IPV6
 /**
  * Create a RAW PCB for IPv6.
  *
  * @return The RAW PCB which was created. NULL if the PCB data structure
  * could not be allocated.
  *
+ * @param type IP address type, see IPADDR_TYPE_XX definitions.
  * @param proto the protocol number (next header) of the IPv6 packet payload
  *              (e.g. IP6_NEXTH_ICMP6)
  *
  * @see raw_remove()
  */
 struct raw_pcb *
-raw_new_ip6(u8_t proto)
+raw_new_ip_type(u8_t type, u8_t proto)
 {
   struct raw_pcb *pcb;
   pcb = raw_new(proto);
-#if LWIP_IPV4
-  ip_set_v6(pcb, 1);
-#endif /* LWIP_IPV4 */
+#if LWIP_IPV4 && LWIP_IPV6
+  if(pcb != NULL) {
+    IP_SET_TYPE_VAL(pcb->local_ip,  type);
+    IP_SET_TYPE_VAL(pcb->remote_ip, type);
+  }
+#else /* LWIP_IPV4 && LWIP_IPV6 */
+  LWIP_UNUSED_ARG(type);
+#endif /* LWIP_IPV4 && LWIP_IPV6 */
   return pcb;
 }
-#endif /* LWIP_IPV6 */
 
 #endif /* LWIP_RAW */

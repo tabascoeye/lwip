@@ -70,6 +70,7 @@
    function. */
 static struct tcp_seg inseg;
 static struct tcp_hdr *tcphdr;
+static u16_t tcphdr_optlen;
 static u16_t tcphdr_opt1len;
 static u8_t* tcphdr_opt2;
 static u16_t tcp_optidx;
@@ -133,11 +134,8 @@ tcp_input(struct pbuf *p, struct netif *inp)
   }
 
   /* Don't even process incoming broadcasts/multicasts. */
-  if (
-#if LWIP_IPV4
-      (!ip_current_is_v6() && ip_addr_isbroadcast(ip_current_dest_addr(), ip_current_netif())) ||
-#endif /* LWIP_IPV4 */
-       ip_addr_ismulticast(ip_current_dest_addr())) {
+  if (ip_addr_isbroadcast(ip_current_dest_addr(), ip_current_netif()) ||
+      ip_addr_ismulticast(ip_current_dest_addr())) {
     TCP_STATS_INC(tcp.proterr);
     goto dropped;
   }
@@ -160,7 +158,7 @@ tcp_input(struct pbuf *p, struct netif *inp)
   /* Move the payload pointer in the pbuf so that it points to the
      TCP data instead of the TCP header. */
   hdrlen = TCPH_HDRLEN(tcphdr);
-  tcphdr_opt1len = (hdrlen * 4) - TCP_HLEN;
+  tcphdr_optlen = tcphdr_opt1len = (hdrlen * 4) - TCP_HLEN;
   tcphdr_opt2 = NULL;
   if (p->len < hdrlen * 4) {
     if (p->len >= TCP_HLEN) {
@@ -176,6 +174,12 @@ tcp_input(struct pbuf *p, struct netif *inp)
            options in the next pbuf (adjusting p->tot_len) */
         u8_t phret = pbuf_header(p, -(s16_t)tcphdr_opt1len);
         LWIP_ASSERT("phret == 0", phret == 0);
+        if(tcphdr_optlen - tcphdr_opt1len > p->tot_len) {
+          /* drop short packets */
+          LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_input: short packet (%"U16_F" bytes) discarded\n", p->tot_len));
+          TCP_STATS_INC(tcp.lenerr);
+          goto dropped;
+        }
         tcphdr_opt2 = (u8_t*)p->next->payload;
         opt2len = optlen - tcphdr_opt1len;
         phret = pbuf_header(p->next, -opt2len);
@@ -258,18 +262,15 @@ tcp_input(struct pbuf *p, struct netif *inp)
     prev = NULL;
     for (lpcb = tcp_listen_pcbs.listen_pcbs; lpcb != NULL; lpcb = lpcb->next) {
       if (lpcb->local_port == tcphdr->dest) {
-#if LWIP_IPV4 && LWIP_IPV6
-        if (lpcb->accept_any_ip_version) {
-          /* found an ANY-match */
+        if (IP_IS_ANY_TYPE_VAL(lpcb->local_ip)) {
+          /* found an ANY TYPE (IPv4/IPv6) match */
 #if SO_REUSE
           lpcb_any = lpcb;
           lpcb_prev = prev;
 #else /* SO_REUSE */
           break;
 #endif /* SO_REUSE */
-        } else
-#endif /* LWIP_IPV4 && LWIP_IPV6 */
-        if (IP_PCB_IPVER_INPUT_MATCH(lpcb)) {
+        } else if (IP_ADDR_PCB_VERSION_MATCH_EXACT(lpcb, ip_current_dest_addr())) {
           if (ip_addr_cmp(&lpcb->local_ip, ip_current_dest_addr())) {
             /* found an exact match */
             break;
@@ -325,9 +326,7 @@ tcp_input(struct pbuf *p, struct netif *inp)
   if (pcb != NULL) {
     /* The incoming segment belongs to a connection. */
 #if TCP_INPUT_DEBUG
-#if TCP_DEBUG
     tcp_debug_print_state(pcb->state);
-#endif /* TCP_DEBUG */
 #endif /* TCP_INPUT_DEBUG */
 
     /* Set up a tcp_seg structure. */
@@ -571,9 +570,6 @@ tcp_listen_input(struct tcp_pcb_listen *pcb)
     pcb->accepts_pending++;
 #endif /* TCP_LISTEN_BACKLOG */
     /* Set up the new PCB. */
-#if LWIP_IPV4 && LWIP_IPV6
-    PCB_ISIPV6(npcb) = ip_current_is_v6();
-#endif /* LWIP_IPV4 && LWIP_IPV6 */
     ip_addr_copy(npcb->local_ip, *ip_current_dest_addr());
     ip_addr_copy(npcb->remote_ip, *ip_current_src_addr());
     npcb->local_port = pcb->local_port;
@@ -599,8 +595,7 @@ tcp_listen_input(struct tcp_pcb_listen *pcb)
     npcb->ssthresh = LWIP_TCP_INITIAL_SSTHRESH(npcb);
 
 #if TCP_CALCULATE_EFF_SEND_MSS
-    npcb->mss = tcp_eff_send_mss(npcb->mss, &npcb->local_ip,
-      &npcb->remote_ip, PCB_ISIPV6(npcb));
+    npcb->mss = tcp_eff_send_mss(npcb->mss, &npcb->local_ip, &npcb->remote_ip);
 #endif /* TCP_CALCULATE_EFF_SEND_MSS */
 
     MIB2_STATS_INC(mib2.tcppassiveopens);
@@ -736,8 +731,7 @@ tcp_process(struct tcp_pcb *pcb)
       pcb->state = ESTABLISHED;
 
 #if TCP_CALCULATE_EFF_SEND_MSS
-      pcb->mss = tcp_eff_send_mss(pcb->mss, &pcb->local_ip, &pcb->remote_ip,
-        PCB_ISIPV6(pcb));
+      pcb->mss = tcp_eff_send_mss(pcb->mss, &pcb->local_ip, &pcb->remote_ip);
 #endif /* TCP_CALCULATE_EFF_SEND_MSS */
 
       /* Set ssthresh again after changing 'mss' and 'snd_wnd' */
@@ -1148,7 +1142,7 @@ tcp_receive(struct tcp_pcb *pcb)
       pcb->polltmr = 0;
 
 #if LWIP_IPV6 && LWIP_ND6_TCP_REACHABILITY_HINTS
-      if (PCB_ISIPV6(pcb)) {
+      if (ip_current_is_v6()) {
         /* Inform neighbor reachability of forward progress. */
         nd6_reachability_hint(ip6_current_src_addr());
       }
@@ -1482,7 +1476,7 @@ tcp_receive(struct tcp_pcb *pcb)
         tcp_ack(pcb);
 
 #if LWIP_IPV6 && LWIP_ND6_TCP_REACHABILITY_HINTS
-        if (PCB_ISIPV6(pcb)) {
+        if (ip_current_is_v6()) {
           /* Inform neighbor reachability of forward progress. */
           nd6_reachability_hint(ip6_current_src_addr());
         }
@@ -1682,9 +1676,8 @@ tcp_parseopt(struct tcp_pcb *pcb)
 #endif
 
   /* Parse the TCP MSS option, if present. */
-  if (TCPH_HDRLEN(tcphdr) > 0x5) {
-    u16_t max_c = (TCPH_HDRLEN(tcphdr) - 5) << 2;
-    for (tcp_optidx = 0; tcp_optidx < max_c; ) {
+  if (tcphdr_optlen != 0) {
+    for (tcp_optidx = 0; tcp_optidx < tcphdr_optlen; ) {
       u8_t opt = tcp_getoptbyte();
       switch (opt) {
       case LWIP_TCP_OPT_EOL:
@@ -1697,7 +1690,7 @@ tcp_parseopt(struct tcp_pcb *pcb)
         break;
       case LWIP_TCP_OPT_MSS:
         LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_parseopt: MSS\n"));
-        if (tcp_getoptbyte() != LWIP_TCP_OPT_LEN_MSS || (tcp_optidx - 2 + LWIP_TCP_OPT_LEN_MSS) > max_c) {
+        if (tcp_getoptbyte() != LWIP_TCP_OPT_LEN_MSS || (tcp_optidx - 2 + LWIP_TCP_OPT_LEN_MSS) > tcphdr_optlen) {
           /* Bad length */
           LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_parseopt: bad length\n"));
           return;
@@ -1711,7 +1704,7 @@ tcp_parseopt(struct tcp_pcb *pcb)
 #if LWIP_WND_SCALE
       case LWIP_TCP_OPT_WS:
         LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_parseopt: WND_SCALE\n"));
-        if (tcp_getoptbyte() != LWIP_TCP_OPT_LEN_WS || (tcp_optidx - 2 + LWIP_TCP_OPT_LEN_WS) > max_c) {
+        if (tcp_getoptbyte() != LWIP_TCP_OPT_LEN_WS || (tcp_optidx - 2 + LWIP_TCP_OPT_LEN_WS) > tcphdr_optlen) {
           /* Bad length */
           LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_parseopt: bad length\n"));
           return;
@@ -1737,7 +1730,7 @@ tcp_parseopt(struct tcp_pcb *pcb)
 #if LWIP_TCP_TIMESTAMPS
       case LWIP_TCP_OPT_TS:
         LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_parseopt: TS\n"));
-        if (tcp_getoptbyte() != LWIP_TCP_OPT_LEN_TS || (tcp_optidx - 2 + LWIP_TCP_OPT_LEN_TS) > max_c) {
+        if (tcp_getoptbyte() != LWIP_TCP_OPT_LEN_TS || (tcp_optidx - 2 + LWIP_TCP_OPT_LEN_TS) > tcphdr_optlen) {
           /* Bad length */
           LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_parseopt: bad length\n"));
           return;

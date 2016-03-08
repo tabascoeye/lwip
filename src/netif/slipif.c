@@ -63,7 +63,7 @@
 #include "lwip/def.h"
 #include "lwip/pbuf.h"
 #include "lwip/stats.h"
-#include "lwip/snmp_mib2.h"
+#include "lwip/snmp.h"
 #include "lwip/sys.h"
 #include "lwip/sio.h"
 
@@ -87,7 +87,7 @@
 
 enum slipif_recv_state {
     SLIP_RECV_NORMAL,
-    SLIP_RECV_ESCAPE,
+    SLIP_RECV_ESCAPE
 };
 
 struct slipif_priv {
@@ -123,7 +123,7 @@ slipif_output(struct netif *netif, struct pbuf *p)
   LWIP_ASSERT("p != NULL", (p != NULL));
 
   LWIP_DEBUGF(SLIP_DEBUG, ("slipif_output(%"U16_F"): sending %"U16_F" bytes\n", (u16_t)netif->num, p->tot_len));
-  priv = netif->state;
+  priv = (struct slipif_priv *)netif->state;
 
   /* Send pbuf out on the serial I/O device. */
   /* Start with packet delimiter. */
@@ -155,6 +155,7 @@ slipif_output(struct netif *netif, struct pbuf *p)
   return ERR_OK;
 }
 
+#if LWIP_IPV4
 /**
  * Send a pbuf doing the necessary SLIP encapsulation
  *
@@ -166,11 +167,12 @@ slipif_output(struct netif *netif, struct pbuf *p)
  * @return always returns ERR_OK since the serial layer does not provide return values
  */
 static err_t
-slipif_output_v4(struct netif *netif, struct pbuf *p, ip_addr_t *ipaddr)
+slipif_output_v4(struct netif *netif, struct pbuf *p, const ip4_addr_t *ipaddr)
 {
   LWIP_UNUSED_ARG(ipaddr);
   return slipif_output(netif, p);
 }
+#endif /* LWIP_IPV4 */
 
 #if LWIP_IPV6
 /**
@@ -184,7 +186,7 @@ slipif_output_v4(struct netif *netif, struct pbuf *p, ip_addr_t *ipaddr)
  * @return always returns ERR_OK since the serial layer does not provide return values
  */
 static err_t
-slipif_output_v6(struct netif *netif, struct pbuf *p, ip6_addr_t *ipaddr)
+slipif_output_v6(struct netif *netif, struct pbuf *p, const ip6_addr_t *ipaddr)
 {
   LWIP_UNUSED_ARG(ipaddr);
   return slipif_output(netif, p);
@@ -208,7 +210,7 @@ slipif_rxbyte(struct netif *netif, u8_t c)
   LWIP_ASSERT("netif != NULL", (netif != NULL));
   LWIP_ASSERT("netif->state != NULL", (netif->state != NULL));
 
-  priv = netif->state;
+  priv = (struct slipif_priv *)netif->state;
 
   switch (priv->state) {
   case SLIP_RECV_NORMAL:
@@ -231,6 +233,8 @@ slipif_rxbyte(struct netif *netif, u8_t c)
     case SLIP_ESC:
       priv->state = SLIP_RECV_ESCAPE;
       return NULL;
+    default:
+      break;
     } /* end switch (c) */
     break;
   case SLIP_RECV_ESCAPE:
@@ -243,8 +247,12 @@ slipif_rxbyte(struct netif *netif, u8_t c)
     case SLIP_ESC_ESC:
       c = SLIP_ESC;
       break;
+    default:
+      break;
     }
     priv->state = SLIP_RECV_NORMAL;
+    break;
+  default:
     break;
   } /* end switch (priv->state) */
 
@@ -363,7 +371,9 @@ slipif_init(struct netif *netif)
 
   netif->name[0] = 's';
   netif->name[1] = 'l';
+#if LWIP_IPV4
   netif->output = slipif_output_v4;
+#endif /* LWIP_IPV4 */
 #if LWIP_IPV6
   netif->output_ip6 = slipif_output_v6;
 #endif /* LWIP_IPV6 */

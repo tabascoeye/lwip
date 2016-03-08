@@ -81,7 +81,6 @@ icmp_input(struct pbuf *p, struct netif *inp)
 #endif /* LWIP_DEBUG */
   struct icmp_echo_hdr *iecho;
   const struct ip_hdr *iphdr_in;
-  struct ip_hdr *iphdr;
   s16_t hlen;
   const ip4_addr_t* src;
 
@@ -109,7 +108,7 @@ icmp_input(struct pbuf *p, struct netif *inp)
     MIB2_STATS_INC(mib2.icmpinechos);
     src = ip4_current_dest_addr();
     /* multicast destination address? */
-    if (ip_addr_ismulticast(ip_current_dest_addr())) {
+    if (ip4_addr_ismulticast(ip4_current_dest_addr())) {
 #if LWIP_MULTICAST_PING
       /* For multicast, use address of receiving interface as source address */
       src = netif_ip4_addr(inp);
@@ -119,7 +118,7 @@ icmp_input(struct pbuf *p, struct netif *inp)
 #endif /* LWIP_MULTICAST_PING */
     }
     /* broadcast destination address? */
-    if (ip_addr_isbroadcast(ip_current_dest_addr(), ip_current_netif())) {
+    if (ip4_addr_isbroadcast(ip4_current_dest_addr(), ip_current_netif())) {
 #if LWIP_BROADCAST_PING
       /* For broadcast, use address of receiving interface as source address */
       src = netif_ip4_addr(inp);
@@ -160,15 +159,16 @@ icmp_input(struct pbuf *p, struct netif *inp)
                   (r->len >= hlen + sizeof(struct icmp_echo_hdr)));
       /* copy the ip header */
       MEMCPY(r->payload, iphdr_in, hlen);
-      iphdr = (struct ip_hdr *)r->payload;
       /* switch r->payload back to icmp header */
       if (pbuf_header(r, -hlen)) {
         LWIP_ASSERT("icmp_input: moving r->payload to icmp header failed\n", 0);
+        pbuf_free(r);
         goto icmperr;
       }
       /* copy the rest of the packet without ip header */
       if (pbuf_copy(r, p) != ERR_OK) {
         LWIP_ASSERT("icmp_input: copying to new pbuf failed\n", 0);
+        pbuf_free(r);
         goto icmperr;
       }
       /* free the original p */
@@ -191,7 +191,7 @@ icmp_input(struct pbuf *p, struct netif *inp)
       LWIP_ASSERT("Can't move over header in packet", 0);
     } else {
       err_t ret;
-      iphdr = (struct ip_hdr*)p->payload;
+      struct ip_hdr *iphdr = (struct ip_hdr*)p->payload;
       ip4_addr_copy(iphdr->src, *src);
       ip4_addr_copy(iphdr->dest, *ip4_current_src_addr());
       ICMPH_TYPE_SET(iecho, ICMP_ER);
@@ -232,7 +232,7 @@ icmp_input(struct pbuf *p, struct netif *inp)
       ret = ip4_output_if(p, src, IP_HDRINCL,
                    ICMP_TTL, 0, IP_PROTO_ICMP, inp);
       if (ret != ERR_OK) {
-        LWIP_DEBUGF(ICMP_DEBUG, ("icmp_input: ip_output_if returned an error: %c.\n", ret));
+        LWIP_DEBUGF(ICMP_DEBUG, ("icmp_input: ip_output_if returned an error: %s\n", lwip_strerr(ret)));
       }
     }
     break;
@@ -359,7 +359,16 @@ icmp_send_response(struct pbuf *p, u8_t type, u8_t code)
   SMEMCPY((u8_t *)q->payload + sizeof(struct icmp_echo_hdr), (u8_t *)p->payload,
           IP_HLEN + ICMP_DEST_UNREACH_DATASIZE);
 
+  ip4_addr_copy(iphdr_src, iphdr->src);
+#ifdef LWIP_HOOK_IP4_ROUTE_SRC
+  {
+    ip4_addr_t iphdr_dst;
+    ip4_addr_copy(iphdr_dst, iphdr->dest);
+    netif = ip4_route_src(&iphdr_src, &iphdr_dst);
+  }
+#else
   netif = ip4_route(&iphdr_src);
+#endif
   if (netif != NULL) {
     /* calculate checksum */
     icmphdr->chksum = 0;
@@ -369,7 +378,6 @@ icmp_send_response(struct pbuf *p, u8_t type, u8_t code)
     }
 #endif
     ICMP_STATS_INC(icmp.xmit);
-    ip4_addr_copy(iphdr_src, iphdr->src);
     ip4_output_if(q, NULL, &iphdr_src, ICMP_TTL, 0, IP_PROTO_ICMP, netif);
   }
   pbuf_free(q);

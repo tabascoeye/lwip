@@ -252,7 +252,7 @@ struct tcp_pcb {
 
   tcpwnd_size_t snd_buf;   /* Available buffer space for sending (in bytes). */
 #define TCP_SNDQUEUELEN_OVERFLOW (0xffffU-3)
-  u16_t snd_queuelen; /* Available buffer space for sending (in pbufs). */
+  u16_t snd_queuelen; /* Number of pbufs currently in the send buffer. */
 
 #if TCP_OVERSIZE
   /* Extra bytes available at the end of the last pbuf in unsent. */
@@ -317,9 +317,6 @@ struct tcp_pcb_listen {
   u8_t backlog;
   u8_t accepts_pending;
 #endif /* TCP_LISTEN_BACKLOG */
-#if LWIP_IPV4 && LWIP_IPV6
-  u8_t accept_any_ip_version;
-#endif /* LWIP_IPV4 && LWIP_IPV6 */
 };
 
 #if LWIP_EVENT_API
@@ -343,6 +340,7 @@ err_t lwip_tcp_event(void *arg, struct tcp_pcb *pcb,
 
 /* Application program's interface: */
 struct tcp_pcb * tcp_new     (void);
+struct tcp_pcb * tcp_new_ip_type (u8_t type);
 
 void             tcp_arg     (struct tcp_pcb *pcb, void *arg);
 void             tcp_accept  (struct tcp_pcb *pcb, tcp_accept_fn accept);
@@ -362,6 +360,9 @@ void             tcp_err     (struct tcp_pcb *pcb, tcp_err_fn err);
 #define          tcp_accepted(pcb) do { \
   LWIP_ASSERT("pcb->state == LISTEN (called for wrong pcb?)", pcb->state == LISTEN); \
   (((struct tcp_pcb_listen *)(pcb))->accepts_pending--); } while(0)
+#define          tcp_backlog_set(pcb, new_backlog) do { \
+  LWIP_ASSERT("pcb->state == LISTEN (called for wrong pcb?)", (pcb)->state == LISTEN); \
+  ((struct tcp_pcb_listen *)(pcb))->backlog = ((new_backlog) ? (new_backlog) : 1); } while(0)
 #else  /* TCP_LISTEN_BACKLOG */
 #define          tcp_accepted(pcb) LWIP_ASSERT("pcb->state == LISTEN (called for wrong pcb?)", \
                                                (pcb)->state == LISTEN)
@@ -398,17 +399,8 @@ err_t            tcp_output  (struct tcp_pcb *pcb);
 
 const char* tcp_debug_state_str(enum tcp_state s);
 
-#if LWIP_IPV6
-struct tcp_pcb * tcp_new_ip6 (void);
-#endif /* LWIP_IPV6 */
-#if LWIP_IPV4 && LWIP_IPV6
-struct tcp_pcb * tcp_listen_dual_with_backlog(struct tcp_pcb *pcb, u8_t backlog);
-#define          tcp_listen_dual(pcb) tcp_listen_dual_with_backlog(pcb, TCP_DEFAULT_LISTEN_BACKLOG)
-#else /* LWIP_IPV4 && LWIP_IPV6 */
-#define          tcp_listen_dual_with_backlog(pcb, backlog) tcp_listen_with_backlog(pcb, backlog)
-#define          tcp_listen_dual(pcb) tcp_listen(pcb)
-#endif /* LWIP_IPV4 && LWIP_IPV6 */
-
+/* for compatibility with older implementation */
+#define tcp_new_ip6() tcp_new_ip_type(IPADDR_TYPE_V6)
 
 #ifdef __cplusplus
 }
