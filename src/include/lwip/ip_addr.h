@@ -1,3 +1,8 @@
+/**
+ * @file
+ * IP address API (common IPv4 and IPv6)
+ */
+
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
  * All rights reserved.
@@ -67,7 +72,9 @@ extern const ip_addr_t ip_addr_any_type;
 #define IP_IS_ANY_TYPE_VAL(ipaddr)    (IP_GET_TYPE(&ipaddr) == IPADDR_TYPE_ANY)
 #define IPADDR_ANY_TYPE_INIT          { { { { 0ul, 0ul, 0ul, 0ul } } }, IPADDR_TYPE_ANY }
 
+#define IP_IS_V4_VAL(ipaddr)          (IP_GET_TYPE(&ipaddr) == IPADDR_TYPE_V4)
 #define IP_IS_V6_VAL(ipaddr)          (IP_GET_TYPE(&ipaddr) == IPADDR_TYPE_V6)
+#define IP_IS_V4(ipaddr)              (((ipaddr) == NULL) || IP_IS_V4_VAL(*(ipaddr)))
 #define IP_IS_V6(ipaddr)              (((ipaddr) != NULL) && IP_IS_V6_VAL(*(ipaddr)))
 #define IP_SET_TYPE_VAL(ipaddr, iptype) do { (ipaddr).type = (iptype); }while(0)
 #define IP_SET_TYPE(ipaddr, iptype)     do { if((ipaddr) != NULL) { IP_SET_TYPE_VAL(*(ipaddr), iptype); }}while(0)
@@ -94,7 +101,7 @@ extern const ip_addr_t ip_addr_any_type;
   ip4_addr_copy(*ip_2_ip4(&(dest)), src); IP_SET_TYPE_VAL(dest, IPADDR_TYPE_V4); }while(0)
 #define ip_addr_set_ip4_u32(ipaddr, val)  do{if(ipaddr){ip4_addr_set_u32(ip_2_ip4(ipaddr), val); \
   IP_SET_TYPE(ipaddr, IPADDR_TYPE_V4); }}while(0)
-#define ip_addr_get_ip4_u32(ipaddr)  (((ipaddr) && !IP_IS_V6(ipaddr)) ? \
+#define ip_addr_get_ip4_u32(ipaddr)  (((ipaddr) && IP_IS_V4(ipaddr)) ? \
   ip4_addr_get_u32(ip_2_ip4(ipaddr)) : 0)
 #define ip_addr_set(dest, src) do{ IP_SET_TYPE(dest, IP_GET_TYPE(src)); if(IP_IS_V6(src)){ \
   ip6_addr_set(ip_2_ip6(dest), ip_2_ip6(src)); }else{ \
@@ -154,6 +161,8 @@ extern const ip_addr_t ip_addr_any_type;
   ((IP_IS_V6(addr)) ? ip6addr_ntoa_r(ip_2_ip6(addr), buf, buflen) : ip4addr_ntoa_r(ip_2_ip4(addr), buf, buflen)))
 int ipaddr_aton(const char *cp, ip_addr_t *addr);
 
+#define IPADDR_STRLEN_MAX   IP6ADDR_STRLEN_MAX
+
 #else /* LWIP_IPV4 && LWIP_IPV6 */
 
 #define IP_ADDR_PCB_VERSION_MATCH(addr, pcb)         1
@@ -163,7 +172,9 @@ int ipaddr_aton(const char *cp, ip_addr_t *addr);
 
 typedef ip4_addr_t ip_addr_t;
 #define IPADDR4_INIT(u32val)                    { u32val }
+#define IP_IS_V4_VAL(ipaddr)                    1
 #define IP_IS_V6_VAL(ipaddr)                    0
+#define IP_IS_V4(ipaddr)                        1
 #define IP_IS_V6(ipaddr)                        0
 #define IP_IS_ANY_TYPE_VAL(ipaddr)              0
 #define IP_SET_TYPE_VAL(ipaddr, iptype)
@@ -198,11 +209,15 @@ typedef ip4_addr_t ip_addr_t;
 #define ipaddr_ntoa_r(ipaddr, buf, buflen)      ip4addr_ntoa_r(ipaddr, buf, buflen)
 #define ipaddr_aton(cp, addr)                   ip4addr_aton(cp, addr)
 
+#define IPADDR_STRLEN_MAX   IP4ADDR_STRLEN_MAX
+
 #else /* LWIP_IPV4 */
 
 typedef ip6_addr_t ip_addr_t;
 #define IPADDR6_INIT(a, b, c, d)                { { a, b, c, d } }
+#define IP_IS_V4_VAL(ipaddr)                    0
 #define IP_IS_V6_VAL(ipaddr)                    1
+#define IP_IS_V4(ipaddr)                        0
 #define IP_IS_V6(ipaddr)                        1
 #define IP_IS_ANY_TYPE_VAL(ipaddr)              0
 #define IP_SET_TYPE_VAL(ipaddr, iptype)
@@ -234,6 +249,8 @@ typedef ip6_addr_t ip_addr_t;
 #define ipaddr_ntoa(ipaddr)                     ip6addr_ntoa(ipaddr)
 #define ipaddr_ntoa_r(ipaddr, buf, buflen)      ip6addr_ntoa_r(ipaddr, buf, buflen)
 #define ipaddr_aton(cp, addr)                   ip6addr_aton(cp, addr)
+
+#define IPADDR_STRLEN_MAX   IP6ADDR_STRLEN_MAX
 
 #endif /* LWIP_IPV4 */
 #endif /* LWIP_IPV4 && LWIP_IPV6 */

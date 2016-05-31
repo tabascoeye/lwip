@@ -59,6 +59,8 @@
 #include "lwip/nd6.h"
 #include "lwip/mld6.h"
 #include "lwip/api.h"
+
+#include "netif/ppp/ppp_opts.h"
 #include "netif/ppp/ppp_impl.h"
 
 /* Compile-time sanity checks for configuration errors.
@@ -348,7 +350,7 @@ lwip_init(void)
 #if PPP_SUPPORT
   ppp_init();
 #endif
-
+ 
 #if LWIP_TIMERS
   sys_timeouts_init();
 #endif /* LWIP_TIMERS */

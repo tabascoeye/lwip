@@ -585,7 +585,8 @@ etharp_remove_static_entry(const ip4_addr_t *ipaddr)
  *
  * @param netif points to a network interface
  */
-void etharp_cleanup_netif(struct netif *netif)
+void
+etharp_cleanup_netif(struct netif *netif)
 {
   u8_t i;
 
@@ -670,7 +671,7 @@ etharp_get_entry(u8_t i, ip4_addr_t **ipaddr, struct netif **netif, struct eth_a
  *
  * @see pbuf_free()
  */
-static void
+void
 etharp_ip_input(struct netif *netif, struct pbuf *p)
 {
   struct eth_hdr *ethhdr;

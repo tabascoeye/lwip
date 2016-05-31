@@ -1,3 +1,8 @@
+/**
+ * @file
+ * HTTP server options list
+ */
+
 /*
  * Copyright (c) 2001-2003 Swedish Institute of Computer Science.
  * All rights reserved.
@@ -38,9 +43,14 @@
 
 #include "lwip/opt.h"
 
-/** Set this to 1 to support CGI */
+/** Set this to 1 to support CGI (old style) */
 #ifndef LWIP_HTTPD_CGI
 #define LWIP_HTTPD_CGI            0
+#endif
+
+/** Set this to 1 to support CGI (new style) */
+#ifndef LWIP_HTTPD_CGI_SSI
+#define LWIP_HTTPD_CGI_SSI        0
 #endif
 
 /** Set this to 1 to support SSI (Server-Side-Includes) */
@@ -82,7 +92,7 @@
 
 /** This string is passed in the HTTP header as "Server: " */
 #ifndef HTTPD_SERVER_AGENT
-#define HTTPD_SERVER_AGENT "lwIP/1.3.1 (http://savannah.nongnu.org/projects/lwip)"
+#define HTTPD_SERVER_AGENT "lwIP/" LWIP_VERSION_STRING " (http://savannah.nongnu.org/projects/lwip)"
 #endif
 
 /** Set this to 1 if you want to include code that creates HTTP headers
@@ -143,6 +153,23 @@
 #define LWIP_HTTPD_STRNSTR_PRIVATE          1
 #endif
 
+/** Set this to 1 on platforms where stricmp is not available */
+#ifndef LWIP_HTTPD_STRICMP_PRIVATE
+#define LWIP_HTTPD_STRICMP_PRIVATE          0
+#endif
+
+/** Define this to a smaller function if you have itoa() at hand... */
+#ifndef LWIP_HTTPD_ITOA
+#ifndef LWIP_HTTPD_ITOA_PRIVATE
+#define LWIP_HTTPD_ITOA_PRIVATE             1
+#endif
+#if LWIP_HTTPD_ITOA_PRIVATE
+#define LWIP_HTTPD_ITOA(buffer, bufsize, number) httpd_itoa(number, buffer)
+#else
+#define LWIP_HTTPD_ITOA(buffer, bufsize, number) snprintf(buffer, bufsize, "%d", number)
+#endif
+#endif
+
 /** Set this to one to show error pages when parsing a request fails instead
     of simply closing the connection. */
 #ifndef LWIP_HTTPD_SUPPORT_EXTSTATUS
@@ -188,6 +215,15 @@
 #endif
 #endif /* LWIP_HTTPD_SUPPORT_REQUESTLIST */
 
+/** This is the size of a static buffer used when URIs end with '/'.
+ * In this buffer, the directory requested is concatenated with all the
+ * configured default file names.
+ * Set to 0 to disable checking default filenames on non-root directories.
+ */
+#ifndef LWIP_HTTPD_MAX_REQUEST_URI_LEN
+#define LWIP_HTTPD_MAX_REQUEST_URI_LEN      63
+#endif
+
 /** Maximum length of the filename to send as response to a POST request,
  * filled in by the application when a POST is finished.
  */
@@ -214,6 +250,12 @@
  */
 #ifndef LWIP_HTTPD_KILL_OLD_ON_CONNECTIONS_EXCEEDED
 #define LWIP_HTTPD_KILL_OLD_ON_CONNECTIONS_EXCEEDED 0
+#endif
+
+/** Set this to 1 to send URIs without extension without headers
+ * (who uses this at all??) */
+#ifndef LWIP_HTTPD_OMIT_HEADER_FOR_EXTENSIONLESS_URI
+#define LWIP_HTTPD_OMIT_HEADER_FOR_EXTENSIONLESS_URI 0
 #endif
 
 /** Default: Tags are sent from struct http_state and are therefore volatile */

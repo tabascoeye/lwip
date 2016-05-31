@@ -31,7 +31,7 @@
  *
  */
 
-#include "lwip/opt.h"
+#include "netif/ppp/ppp_opts.h"
 #if PPP_SUPPORT && PPPOS_SUPPORT /* don't build if not configured for use in lwipopts.h */
 
 #include <string.h>
@@ -50,12 +50,15 @@
 #include "netif/ppp/pppos.h"
 #include "netif/ppp/vj.h"
 
+/* Memory pool */
+LWIP_MEMPOOL_DECLARE(PPPOS_PCB, MEMP_NUM_PPPOS_INTERFACES, sizeof(pppos_pcb), "PPPOS_PCB")
+
 /* callbacks called from PPP core */
 static err_t pppos_write(ppp_pcb *ppp, void *ctx, struct pbuf *p);
 static err_t pppos_netif_output(ppp_pcb *ppp, void *ctx, struct pbuf *pb, u16_t protocol);
 static err_t pppos_connect(ppp_pcb *ppp, void *ctx);
 #if PPP_SERVER
-static err_t pppos_listen(ppp_pcb *ppp, void *ctx, struct ppp_addrs *addrs);
+static err_t pppos_listen(ppp_pcb *ppp, void *ctx, const struct ppp_addrs *addrs);
 #endif /* PPP_SERVER */
 static void pppos_disconnect(ppp_pcb *ppp, void *ctx);
 static err_t pppos_destroy(ppp_pcb *ppp, void *ctx);
@@ -173,14 +176,14 @@ ppp_pcb *pppos_create(struct netif *pppif, pppos_output_cb_fn output_cb,
   pppos_pcb *pppos;
   ppp_pcb *ppp;
 
-  pppos = (pppos_pcb *)memp_malloc(MEMP_PPPOS_PCB);
+  pppos = (pppos_pcb *)LWIP_MEMPOOL_ALLOC(PPPOS_PCB);
   if (pppos == NULL) {
     return NULL;
   }
 
   ppp = ppp_new(pppif, &pppos_callbacks, pppos, link_status_cb, ctx_cb);
   if (ppp == NULL) {
-    memp_free(MEMP_PPPOS_PCB, pppos);
+    LWIP_MEMPOOL_FREE(PPPOS_PCB, pppos);
     return NULL;
   }
 
@@ -329,7 +332,7 @@ pppos_connect(ppp_pcb *ppp, void *ctx)
 
 #if PPP_SERVER
 static err_t
-pppos_listen(ppp_pcb *ppp, void *ctx, struct ppp_addrs *addrs)
+pppos_listen(ppp_pcb *ppp, void *ctx, const struct ppp_addrs *addrs)
 {
   pppos_pcb *pppos = (pppos_pcb *)ctx;
 #if PPP_IPV4_SUPPORT
@@ -421,7 +424,7 @@ pppos_destroy(ppp_pcb *ppp, void *ctx)
   pppos_input_free_current_packet(pppos);
 #endif /* PPP_INPROC_IRQ_SAFE */
 
-  memp_free(MEMP_PPPOS_PCB, pppos);
+  LWIP_MEMPOOL_FREE(PPPOS_PCB, pppos);
   return ERR_OK;
 }
 

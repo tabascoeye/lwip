@@ -31,7 +31,7 @@
 *   Original derived from BSD codes.
 *****************************************************************************/
 
-#include "lwip/opt.h"
+#include "netif/ppp/ppp_opts.h"
 #if PPP_SUPPORT /* don't build if not configured for use in lwipopts.h */
 
 #ifndef PPP_H
@@ -42,7 +42,6 @@
 #include "lwip/mem.h"
 #include "lwip/netif.h"
 #include "lwip/sys.h"
-#include "lwip/sio.h"
 #include "lwip/timers.h"
 #if PPP_IPV6_SUPPORT
 #include "lwip/ip6_addr.h"
@@ -504,7 +503,7 @@ err_t ppp_connect(ppp_pcb *pcb, u16_t holdoff);
  * If this port connects to a modem, the modem connection must be
  * established before calling this.
  */
-err_t ppp_listen(ppp_pcb *pcb, struct ppp_addrs *addrs);
+err_t ppp_listen(ppp_pcb *pcb, const struct ppp_addrs *addrs);
 #endif /* PPP_SERVER */
 
 /*

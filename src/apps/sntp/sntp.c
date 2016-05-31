@@ -15,7 +15,7 @@
  */
 
 /*
- * Copyright (c) 2007-2009 Frédéric Bernon, Simon Goldschmidt
+ * Copyright (c) 2007-2009 FrÃ©dÃ©ric Bernon, Simon Goldschmidt
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -42,7 +42,7 @@
  *
  * This file is part of the lwIP TCP/IP stack.
  *
- * Author: Frédéric Bernon, Simon Goldschmidt
+ * Author: FrÃ©dÃ©ric Bernon, Simon Goldschmidt
  */
 
 #include "lwip/apps/sntp.h"
@@ -428,7 +428,7 @@ sntp_recv(void *arg, struct udp_pcb* pcb, struct pbuf *p, const ip_addr_t *addr,
  * @param server_addr resolved IP address of the SNTP server
  */
 static void
-sntp_send_request(ip_addr_t *server_addr)
+sntp_send_request(const ip_addr_t *server_addr)
 {
   struct pbuf* p;
   p = pbuf_alloc(PBUF_TRANSPORT, SNTP_MSG_LEN, PBUF_RAM);
@@ -460,7 +460,7 @@ sntp_send_request(ip_addr_t *server_addr)
  * DNS found callback when using DNS names as server address.
  */
 static void
-sntp_dns_found(const char* hostname, ip_addr_t *ipaddr, void *arg)
+sntp_dns_found(const char* hostname, const ip_addr_t *ipaddr, void *arg)
 {
   LWIP_UNUSED_ARG(hostname);
   LWIP_UNUSED_ARG(arg);
@@ -572,6 +572,14 @@ sntp_stop(void)
 }
 
 /**
+ * Get enabled state.
+ */
+u8_t sntp_enabled(void)
+{
+  return (sntp_pcb != NULL)? 1 : 0;
+}
+
+/**
  * Sets the operating mode.
  * @param operating_mode one of the available operating modes
  */
@@ -610,8 +618,8 @@ sntp_servermode_dhcp(int set_servers_from_dhcp)
 /**
  * Initialize one of the NTP servers by IP address
  *
- * @param numdns the index of the NTP server to set must be < SNTP_MAX_SERVERS
- * @param dnsserver IP address of the NTP server to set
+ * @param idx the index of the NTP server to set must be < SNTP_MAX_SERVERS
+ * @param server IP address of the NTP server to set
  */
 void
 sntp_setserver(u8_t idx, const ip_addr_t *server)
@@ -658,17 +666,17 @@ dhcp_set_ntp_servers(u8_t num, const ip4_addr_t *server)
 /**
  * Obtain one of the currently configured by IP address (or DHCP) NTP servers
  *
- * @param numdns the index of the NTP server
+ * @param idx the index of the NTP server
  * @return IP address of the indexed NTP server or "ip_addr_any" if the NTP
  *         server has not been configured by address (or at all).
  */
-ip_addr_t
+const ip_addr_t*
 sntp_getserver(u8_t idx)
 {
   if (idx < SNTP_MAX_SERVERS) {
-    return sntp_servers[idx].addr;
+    return &sntp_servers[idx].addr;
   }
-  return *IP_ADDR_ANY;
+  return IP_ADDR_ANY;
 }
 
 #if SNTP_SERVER_DNS

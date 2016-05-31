@@ -77,6 +77,16 @@ static err_t lwip_netconn_do_writemore(struct netconn *conn  WRITE_DELAYED_PARAM
 static err_t lwip_netconn_do_close_internal(struct netconn *conn  WRITE_DELAYED_PARAM);
 #endif
 
+#if LWIP_TCPIP_CORE_LOCKING
+#define TCPIP_APIMSG_ACK(m)   NETCONN_SET_SAFE_ERR((m)->conn, (m)->err)
+#else /* LWIP_TCPIP_CORE_LOCKING */
+#define TCPIP_APIMSG_ACK(m)   do { NETCONN_SET_SAFE_ERR((m)->conn, (m)->err); sys_sem_signal(LWIP_API_MSG_SEM(m)); } while(0)
+#endif /* LWIP_TCPIP_CORE_LOCKING */
+
+#if LWIP_TCP
+u8_t netconn_aborted;
+#endif /* LWIP_TCP */
+
 #if LWIP_RAW
 /**
  * Receive callback function for RAW netconns.
@@ -372,12 +382,18 @@ err_tcp(void *arg, err_t err)
 
   conn->pcb.tcp = NULL;
 
-  /* no check since this is always fatal! */
-  SYS_ARCH_SET(conn->last_err, err);
-
   /* reset conn->state now before waking up other threads */
   old_state = conn->state;
   conn->state = NETCONN_NONE;
+
+  if (old_state == NETCONN_CLOSE) {
+    /* RST during close: let close return success & dealloc the netconn */
+    err = ERR_OK;
+    NETCONN_SET_SAFE_ERR(conn, ERR_OK);
+  } else {
+    /* no check since this is always fatal! */
+    SYS_ARCH_SET(conn->last_err, err);
+  }
 
   /* @todo: the type of NETCONN_EVT created should depend on 'old_state' */
 
@@ -456,15 +472,32 @@ accept_function(void *arg, struct tcp_pcb *newpcb, err_t err)
 
   LWIP_DEBUGF(API_MSG_DEBUG, ("accept_function: newpcb->tate: %s\n", tcp_debug_state_str(newpcb->state)));
 
+  if (conn == NULL) {
+    return ERR_VAL;
+  }
   if (!sys_mbox_valid(&conn->acceptmbox)) {
     LWIP_DEBUGF(API_MSG_DEBUG, ("accept_function: acceptmbox already deleted\n"));
     return ERR_VAL;
   }
 
+  if (newpcb == NULL) {
+    /* out-of-pcbs during connect: pass on this error to the application */
+    if (sys_mbox_trypost(&conn->acceptmbox, &netconn_aborted) == ERR_OK) {
+      /* Register event with callback */
+      API_EVENT(conn, NETCONN_EVT_RCVPLUS, 0);
+    }
+    return ERR_VAL;
+  }
+
   /* We have to set the callback here even though
-   * the new socket is unknown. conn->socket is marked as -1. */
+   * the new socket is unknown. newconn->socket is marked as -1. */
   newconn = netconn_alloc(conn->type, conn->callback);
   if (newconn == NULL) {
+    /* outof netconns: pass on this error to the application */
+    if (sys_mbox_trypost(&conn->acceptmbox, &netconn_aborted) == ERR_OK) {
+      /* Register event with callback */
+      API_EVENT(conn, NETCONN_EVT_RCVPLUS, 0);
+    }
     return ERR_MEM;
   }
   newconn->pcb.tcp = newpcb;
@@ -472,6 +505,9 @@ accept_function(void *arg, struct tcp_pcb *newpcb, err_t err)
   /* no protection: when creating the pcb, the netconn is not yet known
      to the application thread */
   newconn->last_err = err;
+
+  /* handle backlog counter */
+  tcp_backlog_delayed(newpcb);
 
   if (sys_mbox_trypost(&conn->acceptmbox, newconn) != ERR_OK) {
     /* When returning != ERR_OK, the pcb is aborted in tcp_process(),
@@ -507,7 +543,7 @@ accept_function(void *arg, struct tcp_pcb *newpcb, err_t err)
  * @return msg->conn->err, but the return value is currently ignored
  */
 static void
-pcb_new(struct api_msg_msg *msg)
+pcb_new(struct api_msg *msg)
 {
   LWIP_ASSERT("pcb_new: pcb already allocated", msg->conn->pcb.tcp == NULL);
 
@@ -568,12 +604,12 @@ pcb_new(struct api_msg_msg *msg)
  * Create a new pcb of a specific type inside a netconn.
  * Called from netconn_new_with_proto_and_callback.
  *
- * @param msg the api_msg_msg describing the connection type
+ * @param m the api_msg_msg describing the connection type
  */
 void
 lwip_netconn_do_newconn(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   msg->err = ERR_OK;
   if (msg->conn->pcb.tcp == NULL) {
@@ -591,7 +627,6 @@ lwip_netconn_do_newconn(void *m)
  * The corresponding pcb is NOT created!
  *
  * @param t the type of 'connection' to create (@see enum netconn_type)
- * @param proto the IP protocol for RAW IP pcbs
  * @param callback a function to call on status changes (RX available, TX'ed)
  * @return a newly allocated struct netconn or
  *         NULL on memory error
@@ -751,9 +786,6 @@ netconn_drain(struct netconn *conn)
       struct netconn *newconn = (struct netconn *)mem;
       /* Only tcp pcbs have an acceptmbox, so no need to check conn->type */
       /* pcb might be set to NULL already by err_tcp() */
-      if (conn->pcb.tcp != NULL) {
-        tcp_accepted(conn->pcb.tcp);
-      }
       /* drain recvmbox */
       netconn_drain(newconn);
       if (newconn->pcb.tcp != NULL) {
@@ -880,38 +912,33 @@ lwip_netconn_do_close_internal(struct netconn *conn  WRITE_DELAYED_PARAM)
 #endif /* LWIP_SO_LINGER */
   } else {
     if (err == ERR_MEM) {
-      /* Closing failed because of memory shortage */
-      if (netconn_is_nonblocking(conn)) {
-        /* Nonblocking close failed */
-        close_finished = 1;
-        err = ERR_WOULDBLOCK;
-      } else {
-        /* Blocking close, check the timeout */
+      /* Closing failed because of memory shortage, try again later. Even for
+         nonblocking netconns, we have to wait since no standard socket application
+         is prepared for close failing because of resource shortage.
+         Check the timeout: this is kind of an lwip addition to the standard sockets:
+         we wait for some time when failing to allocate a segment for the FIN */
 #if LWIP_SO_SNDTIMEO || LWIP_SO_LINGER
-        s32_t close_timeout = LWIP_TCP_CLOSE_TIMEOUT_MS_DEFAULT;
-        /* this is kind of an lwip addition to the standard sockets: we wait
-           for some time when failing to allocate a segment for the FIN */
+      s32_t close_timeout = LWIP_TCP_CLOSE_TIMEOUT_MS_DEFAULT;
 #if LWIP_SO_SNDTIMEO
-        if (conn->send_timeout > 0) {
-          close_timeout = conn->send_timeout;
-        }
+      if (conn->send_timeout > 0) {
+        close_timeout = conn->send_timeout;
+      }
 #endif /* LWIP_SO_SNDTIMEO */
 #if LWIP_SO_LINGER
-        if (conn->linger >= 0) {
-          /* use linger timeout (seconds) */
-          close_timeout = conn->linger * 1000U;
-        }
+      if (conn->linger >= 0) {
+        /* use linger timeout (seconds) */
+        close_timeout = conn->linger * 1000U;
+      }
 #endif
-        if ((s32_t)(sys_now() - conn->current_msg->msg.sd.time_started) >= close_timeout) {
+      if ((s32_t)(sys_now() - conn->current_msg->msg.sd.time_started) >= close_timeout) {
 #else /* LWIP_SO_SNDTIMEO || LWIP_SO_LINGER */
-        if (conn->current_msg->msg.sd.polls_left == 0) {
+      if (conn->current_msg->msg.sd.polls_left == 0) {
 #endif /* LWIP_SO_SNDTIMEO || LWIP_SO_LINGER */
-          close_finished = 1;
-          if (close) {
-            /* in this case, we want to RST the connection */
-            tcp_abort(tpcb);
-            err = ERR_OK;
-          }
+        close_finished = 1;
+        if (close) {
+          /* in this case, we want to RST the connection */
+          tcp_abort(tpcb);
+          err = ERR_OK;
         }
       }
     } else {
@@ -974,12 +1001,12 @@ lwip_netconn_do_close_internal(struct netconn *conn  WRITE_DELAYED_PARAM)
  * Delete the pcb inside a netconn.
  * Called from netconn_delete.
  *
- * @param msg the api_msg_msg pointing to the connection
+ * @param m the api_msg_msg pointing to the connection
  */
 void
 lwip_netconn_do_delconn(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   enum netconn_state state = msg->conn->state;
   LWIP_ASSERT("netconn state error", /* this only happens for TCP netconns */
@@ -1075,13 +1102,13 @@ lwip_netconn_do_delconn(void *m)
  * Bind a pcb contained in a netconn
  * Called from netconn_bind.
  *
- * @param msg the api_msg_msg pointing to the connection and containing
- *            the IP address and port to bind to
+ * @param m the api_msg_msg pointing to the connection and containing
+ *          the IP address and port to bind to
  */
 void
 lwip_netconn_do_bind(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   if (ERR_IS_FATAL(msg->conn->last_err)) {
     msg->err = msg->conn->last_err;
@@ -1183,13 +1210,13 @@ lwip_netconn_do_connected(void *arg, struct tcp_pcb *pcb, err_t err)
  * Connect a pcb contained inside a netconn
  * Called from netconn_connect.
  *
- * @param msg the api_msg_msg pointing to the connection and containing
- *            the IP address and port to connect to
+ * @param m the api_msg_msg pointing to the connection and containing
+ *          the IP address and port to connect to
  */
 void
 lwip_netconn_do_connect(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   if (msg->conn->pcb.tcp == NULL) {
     /* This may happen when calling netconn_connect() a second time */
@@ -1255,12 +1282,12 @@ lwip_netconn_do_connect(void *m)
  * Only used for UDP netconns.
  * Called from netconn_disconnect.
  *
- * @param msg the api_msg_msg pointing to the connection to disconnect
+ * @param m the api_msg_msg pointing to the connection to disconnect
  */
 void
 lwip_netconn_do_disconnect(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
 #if LWIP_UDP
   if (NETCONNTYPE_GROUP(msg->conn->type) == NETCONN_UDP) {
@@ -1279,12 +1306,12 @@ lwip_netconn_do_disconnect(void *m)
  * Set a TCP pcb contained in a netconn into listen mode
  * Called from netconn_listen.
  *
- * @param msg the api_msg_msg pointing to the connection
+ * @param m the api_msg_msg pointing to the connection
  */
 void
 lwip_netconn_do_listen(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   if (ERR_IS_FATAL(msg->conn->last_err)) {
     msg->err = msg->conn->last_err;
@@ -1345,9 +1372,7 @@ lwip_netconn_do_listen(void *m)
         } else if (msg->conn->state == NETCONN_LISTEN) {
           /* already listening, allow updating of the backlog */
           msg->err = ERR_OK;
-#if TCP_LISTEN_BACKLOG
           tcp_backlog_set(msg->conn->pcb.tcp, msg->msg.lb.backlog);
-#endif /* TCP_LISTEN_BACKLOG */
         }
       } else {
         msg->err = ERR_ARG;
@@ -1362,12 +1387,12 @@ lwip_netconn_do_listen(void *m)
  * Send some data on a RAW or UDP pcb contained in a netconn
  * Called from netconn_send
  *
- * @param msg the api_msg_msg pointing to the connection
+ * @param m the api_msg_msg pointing to the connection
  */
 void
 lwip_netconn_do_send(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   if (ERR_IS_FATAL(msg->conn->last_err)) {
     msg->err = msg->conn->last_err;
@@ -1417,33 +1442,47 @@ lwip_netconn_do_send(void *m)
  * Indicate data has been received from a TCP pcb contained in a netconn
  * Called from netconn_recv
  *
- * @param msg the api_msg_msg pointing to the connection
+ * @param m the api_msg_msg pointing to the connection
  */
 void
 lwip_netconn_do_recv(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   msg->err = ERR_OK;
   if (msg->conn->pcb.tcp != NULL) {
     if (NETCONNTYPE_GROUP(msg->conn->type) == NETCONN_TCP) {
-#if TCP_LISTEN_BACKLOG
-      if (msg->conn->pcb.tcp->state == LISTEN) {
-        tcp_accepted(msg->conn->pcb.tcp);
-      } else
-#endif /* TCP_LISTEN_BACKLOG */
-      {
-        u32_t remaining = msg->msg.r.len;
-        do {
-          u16_t recved = (remaining > 0xffff) ? 0xffff : (u16_t)remaining;
-          tcp_recved(msg->conn->pcb.tcp, recved);
-          remaining -= recved;
-        } while (remaining != 0);
-      }
+      u32_t remaining = msg->msg.r.len;
+      do {
+        u16_t recved = (remaining > 0xffff) ? 0xffff : (u16_t)remaining;
+        tcp_recved(msg->conn->pcb.tcp, recved);
+        remaining -= recved;
+      } while (remaining != 0);
     }
   }
   TCPIP_APIMSG_ACK(msg);
 }
+
+#if TCP_LISTEN_BACKLOG
+/** Indicate that a TCP pcb has been accepted
+ * Called from netconn_accept
+ *
+ * @param m the api_msg_msg pointing to the connection
+ */
+void
+lwip_netconn_do_accepted(void *m)
+{
+  struct api_msg *msg = (struct api_msg*)m;
+
+  msg->err = ERR_OK;
+  if (msg->conn->pcb.tcp != NULL) {
+    if (NETCONNTYPE_GROUP(msg->conn->type) == NETCONN_TCP) {
+      tcp_backlog_accepted(msg->conn->pcb.tcp);
+    }
+  }
+  TCPIP_APIMSG_ACK(msg);
+}
+#endif /* TCP_LISTEN_BACKLOG */
 
 /**
  * See if more data needs to be written from a previous call to netconn_write.
@@ -1605,12 +1644,12 @@ err_mem:
  * Send some data on a TCP pcb contained in a netconn
  * Called from netconn_write
  *
- * @param msg the api_msg_msg pointing to the connection
+ * @param m the api_msg_msg pointing to the connection
  */
 void
 lwip_netconn_do_write(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   if (ERR_IS_FATAL(msg->conn->last_err)) {
     msg->err = msg->conn->last_err;
@@ -1661,12 +1700,12 @@ lwip_netconn_do_write(void *m)
  * Return a connection's local or remote address
  * Called from netconn_getaddr
  *
- * @param msg the api_msg_msg pointing to the connection
+ * @param m the api_msg_msg pointing to the connection
  */
 void
 lwip_netconn_do_getaddr(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   if (msg->conn->pcb.ip != NULL) {
     if (msg->msg.ad.local) {
@@ -1727,12 +1766,12 @@ lwip_netconn_do_getaddr(void *m)
  * Called from netconn_close
  * In contrast to closing sockets, the netconn is not deallocated.
  *
- * @param msg the api_msg_msg pointing to the connection
+ * @param m the api_msg_msg pointing to the connection
  */
 void
 lwip_netconn_do_close(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
 #if LWIP_TCP
   enum netconn_state state = msg->conn->state;
@@ -1803,12 +1842,12 @@ lwip_netconn_do_close(void *m)
  * Join multicast groups for UDP netconns.
  * Called from netconn_join_leave_group
  *
- * @param msg the api_msg_msg pointing to the connection
+ * @param m the api_msg_msg pointing to the connection
  */
 void
 lwip_netconn_do_join_leave_group(void *m)
 {
-  struct api_msg_msg *msg = (struct api_msg_msg*)m;
+  struct api_msg *msg = (struct api_msg*)m;
 
   if (ERR_IS_FATAL(msg->conn->last_err)) {
     msg->err = msg->conn->last_err;

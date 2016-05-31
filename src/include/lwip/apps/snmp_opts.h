@@ -1,3 +1,8 @@
+/**
+ * @file
+ * SNMP server options list
+ */
+
 /*
  * Copyright (c) 2015 Dirk Ziegelmeier
  * All rights reserved.
@@ -44,6 +49,15 @@
  */
 #ifndef LWIP_SNMP
 #define LWIP_SNMP                       0
+#endif
+
+/**
+ * LWIP_SNMP_V3==1: This enables EXPERIMENTAL SNMPv3 support. LWIP_SNMP must
+ * also be enabled.
+ * THIS IS UNDER DEVELOPMENT AND SHOULD NOT BE ENABLED IN PRODUCTS.
+ */
+#ifndef LWIP_SNMP_V3
+#define LWIP_SNMP_V3               0
 #endif
 
 /**
@@ -246,5 +260,14 @@
 #define SNMP_LWIP_GETBULK_MAX_REPETITIONS 0
 #endif
 
-#endif /* LWIP_HDR_SNMP_OPTS_H */
+/*
+   ------------------------------------
+   ---------- SNMPv3 options ----------
+   ------------------------------------
+*/
 
+#ifndef LWIP_SNMP_V3_CRYPTO
+#define LWIP_SNMP_V3_CRYPTO               LWIP_SNMP_V3
+#endif
+
+#endif /* LWIP_HDR_SNMP_OPTS_H */

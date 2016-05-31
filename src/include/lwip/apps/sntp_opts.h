@@ -1,5 +1,10 @@
+/**
+ * @file
+ * SNTP client options list
+ */
+
 /*
- * Copyright (c) 2007-2009 Fr�d�ric Bernon, Simon Goldschmidt
+ * Copyright (c) 2007-2009 Frédéric Bernon, Simon Goldschmidt
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
@@ -26,7 +31,7 @@
  *
  * This file is part of the lwIP TCP/IP stack.
  *
- * Author: Fr�d�ric Bernon, Simon Goldschmidt
+ * Author: Frédéric Bernon, Simon Goldschmidt
  *
  */
 #ifndef LWIP_HDR_APPS_SNTP_OPTS_H
@@ -53,14 +58,13 @@
 #define SNTP_GET_SERVERS_FROM_DHCP LWIP_DHCP_GET_NTP_SRV
 #endif
 
-/* Set this to 1 to support DNS names (or IP address strings) to set sntp servers */
+/** Set this to 1 to support DNS names (or IP address strings) to set sntp servers
+ * One server address/name can be defined as default if SNTP_SERVER_DNS == 1:
+ * \#define SNTP_SERVER_ADDRESS "pool.ntp.org"
+ */
 #ifndef SNTP_SERVER_DNS
 #define SNTP_SERVER_DNS            0
 #endif
-
-/** One server address/name can be defined as default if SNTP_SERVER_DNS == 1:
- * #define SNTP_SERVER_ADDRESS "pool.ntp.org"
- */
 
 /**
  * SNTP_DEBUG: Enable debugging for SNTP.

@@ -33,7 +33,7 @@
 #ifndef LWIP_HDR_PPP_IMPL_H
 #define LWIP_HDR_PPP_IMPL_H
 
-#include "lwip/opt.h"
+#include "netif/ppp/ppp_opts.h"
 
 #if PPP_SUPPORT /* don't build if not configured for use in lwipopts.h */
 
@@ -141,7 +141,7 @@ struct link_callbacks {
   err_t (*connect) (ppp_pcb *pcb, void *ctx);
 #if PPP_SERVER
   /* Listen for an incoming connection (Passive mode) */
-  err_t (*listen) (ppp_pcb *pcb, void *ctx, struct ppp_addrs *addrs);
+  err_t (*listen) (ppp_pcb *pcb, void *ctx, const struct ppp_addrs *addrs);
 #endif /* PPP_SERVER */
   /* End a connection (i.e. initiate disconnect phase) */
   void (*disconnect) (ppp_pcb *pcb, void *ctx);
@@ -378,13 +378,13 @@ struct pppd_stats {
  * PPP private functions
  */
 
+ 
 /*
  * Functions called from lwIP core.
  */
 
 /* initialize the PPP subsystem */
 int ppp_init(void);
-
 
 /*
  * Functions called from PPP link protocols.

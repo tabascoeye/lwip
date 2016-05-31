@@ -50,7 +50,7 @@
  * - Hidden AVPs
  */
 
-#include "lwip/opt.h"
+#include "netif/ppp/ppp_opts.h"
 #if PPP_SUPPORT && PPPOL2TP_SUPPORT /* don't build if not configured for use in lwipopts.h */
 
 #include "lwip/err.h"
@@ -63,16 +63,11 @@
 #include "netif/ppp/lcp.h"
 #include "netif/ppp/ipcp.h"
 #include "netif/ppp/pppol2tp.h"
-
+#include "netif/ppp/pppcrypt.h"
 #include "netif/ppp/magic.h"
 
-#if PPPOL2TP_AUTH_SUPPORT
-#if LWIP_INCLUDED_POLARSSL_MD5
-#include "netif/ppp/polarssl/md5.h"
-#else
-#include "polarssl/md5.h"
-#endif
-#endif /* PPPOL2TP_AUTH_SUPPORT */
+/* Memory pool */
+LWIP_MEMPOOL_DECLARE(PPPOL2TP_PCB, MEMP_NUM_PPPOL2TP_INTERFACES, sizeof(pppol2tp_pcb), "PPPOL2TP_PCB")
 
 /* callbacks called from PPP core */
 static err_t pppol2tp_write(ppp_pcb *ppp, void *ctx, struct pbuf *p);
@@ -113,7 +108,7 @@ static const struct link_callbacks pppol2tp_callbacks = {
 
 /* Create a new L2TP session. */
 ppp_pcb *pppol2tp_create(struct netif *pppif,
-       struct netif *netif, ip_addr_t *ipaddr, u16_t port,
+       struct netif *netif, const ip_addr_t *ipaddr, u16_t port,
        const u8_t *secret, u8_t secret_len,
        ppp_link_status_cb_fn link_status_cb, void *ctx_cb) {
   ppp_pcb *ppp;
@@ -124,17 +119,12 @@ ppp_pcb *pppol2tp_create(struct netif *pppif,
     goto ipaddr_check_failed;
   }
 
-  l2tp = (pppol2tp_pcb *)memp_malloc(MEMP_PPPOL2TP_PCB);
+  l2tp = (pppol2tp_pcb *)LWIP_MEMPOOL_ALLOC(PPPOL2TP_PCB);
   if (l2tp == NULL) {
     goto memp_malloc_l2tp_failed;
   }
 
-#if LWIP_IPV6
-  if (IP_IS_V6_VAL(*ipaddr)) {
-    udp = udp_new_ip_type(IPADDR_TYPE_V6);
-  } else
-#endif /* LWIP_IPV6 */
-  udp = udp_new();
+  udp = udp_new_ip_type(IP_GET_TYPE(ipaddr));
   if (udp == NULL) {
     goto udp_new_failed;
   }
@@ -162,7 +152,7 @@ ppp_pcb *pppol2tp_create(struct netif *pppif,
 ppp_new_failed:
   udp_remove(udp);
 udp_new_failed:
-  memp_free(MEMP_PPPOL2TP_PCB, l2tp);
+  LWIP_MEMPOOL_FREE(PPPOL2TP_PCB, l2tp);
 memp_malloc_l2tp_failed:
 ipaddr_check_failed:
   return NULL;
@@ -259,7 +249,7 @@ static err_t pppol2tp_destroy(ppp_pcb *ppp, void *ctx) {
   if (l2tp->udp != NULL) {
     udp_remove(l2tp->udp);
   }
-  memp_free(MEMP_PPPOL2TP_PCB, l2tp);
+  LWIP_MEMPOOL_FREE(PPPOL2TP_PCB, l2tp);
   return ERR_OK;
 }
 
@@ -495,7 +485,7 @@ static void pppol2tp_dispatch_control_packet(pppol2tp_pcb *l2tp, u16_t port, str
   u16_t avplen, avpflags, vendorid, attributetype, messagetype=0;
   err_t err;
 #if PPPOL2TP_AUTH_SUPPORT
-  md5_context md5_ctx;
+  lwip_md5_context md5_ctx;
   u8_t md5_hash[16];
   u8_t challenge_id = 0;
 #endif /* PPPOL2TP_AUTH_SUPPORT */
@@ -602,12 +592,14 @@ static void pppol2tp_dispatch_control_packet(pppol2tp_pcb *l2tp, u16_t port, str
               return;
             }
             /* Generate hash of ID, secret, challenge */
-            md5_starts(&md5_ctx);
+            lwip_md5_init(&md5_ctx);
+            lwip_md5_starts(&md5_ctx);
             challenge_id = PPPOL2TP_MESSAGETYPE_SCCCN;
-            md5_update(&md5_ctx, &challenge_id, 1);
-            md5_update(&md5_ctx, l2tp->secret, l2tp->secret_len);
-            md5_update(&md5_ctx, inp, avplen);
-            md5_finish(&md5_ctx, l2tp->challenge_hash);
+            lwip_md5_update(&md5_ctx, &challenge_id, 1);
+            lwip_md5_update(&md5_ctx, l2tp->secret, l2tp->secret_len);
+            lwip_md5_update(&md5_ctx, inp, avplen);
+            lwip_md5_finish(&md5_ctx, l2tp->challenge_hash);
+            lwip_md5_free(&md5_ctx);
             l2tp->send_challenge = 1;
             goto skipavp;
           case PPPOL2TP_AVPTYPE_CHALLENGERESPONSE:
@@ -616,12 +608,14 @@ static void pppol2tp_dispatch_control_packet(pppol2tp_pcb *l2tp, u16_t port, str
                return;
             }
             /* Generate hash of ID, secret, challenge */
-            md5_starts(&md5_ctx);
+            lwip_md5_init(&md5_ctx);
+            lwip_md5_starts(&md5_ctx);
             challenge_id = PPPOL2TP_MESSAGETYPE_SCCRP;
-            md5_update(&md5_ctx, &challenge_id, 1);
-            md5_update(&md5_ctx, l2tp->secret, l2tp->secret_len);
-            md5_update(&md5_ctx, l2tp->secret_rv, sizeof(l2tp->secret_rv));
-            md5_finish(&md5_ctx, md5_hash);
+            lwip_md5_update(&md5_ctx, &challenge_id, 1);
+            lwip_md5_update(&md5_ctx, l2tp->secret, l2tp->secret_len);
+            lwip_md5_update(&md5_ctx, l2tp->secret_rv, sizeof(l2tp->secret_rv));
+            lwip_md5_finish(&md5_ctx, md5_hash);
+            lwip_md5_free(&md5_ctx);
             if ( memcmp(inp, md5_hash, sizeof(md5_hash)) ) {
               PPPDEBUG(LOG_DEBUG, ("pppol2tp: Received challenge response from peer and secret key do not match\n"));
               pppol2tp_abort_connect(l2tp);

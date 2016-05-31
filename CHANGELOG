@@ -6,11 +6,30 @@ HISTORY
 
   ++ New features:
 
-  2016-02-22: Ivan Delamer:
+  2016-04-05: Simon Goldschmidt:
+  * timers.h/.c: prepare for overriding current timeout implementation: all
+    stack-internal caclic timers are avaliable in the lwip_cyclic_timers array
+
+  2016-03-23: Simon Goldschmidt
+  * tcp: call accept-callback with ERR_MEM when allocating a pcb fails on
+    passive open to inform the application about this error
+	ATTENTION: applications have to handle NULL pcb in accept callback!
+
+  2016-02-22: Ivan Delamer
   * Initial 6LoWPAN support
 
+  2016-02-XX to 2016-03-XX: Dirk Ziegelmeier
+  * Cleanup TCPIP thread sync methods in a way that it is possibe to use them
+    in arbitrary code that needs things to be done in TCPIP thread. Used to
+    decouple netconn, netif, ppp and 6LoWPAN from LWIP core.
+
+  2016-02-XX: Dirk Ziegelmeier
+  * Implement dual-stack support in RAW, UDP and TCP. Add new IP address
+    type IPADDR_ANY_TYPE for this. Netconn/Socket API: Dual-stack is
+    automatically supported when an IPv6 netconn/socket is created.
+
   2015-12-26: Martin Hentschel and Dirk Ziegelmeier
-  * Rewrite SNMP agent
+  * Rewrite SNMP agent. SNMPv2c + MIB compiler.
 
   2015-11-12: Dirk Ziegelmeier
   * Decouple SNMP stack from lwIP core and move stack to apps/ directory.
@@ -18,7 +37,7 @@ HISTORY
 
   2015-11-12: Dirk Ziegelmeier
   * Implement possibility to declare private memory pools. This is useful to
-    decouple some apps from the core (SNMP stack) or make contrib app useage
+    decouple some apps from the core (SNMP stack) or make contrib app usage
     simpler (httpserver_raw)
 
   2015-10-09: Simon Goldschmidt
@@ -301,6 +320,41 @@ HISTORY
 
 
   ++ Bugfixes:
+
+  2016-04-05: Simon Goldschmidt (patch by Philip Gladstone)
+  * udp.c: patch #8358: allow more combinations of listening PCB for IPv6
+
+  2016-04-05: Simon Goldschmidt
+  * netconn/socket API: fixed bug# 43739 (Accept not reporting errors about
+    aborted connections): netconn_accept() returns ERR_ABRT (sockets: ECONNABORTED)
+    for aborted connections, ERR_CLSD (sockets: EINVAL) if the listening netconn
+    is closed, which better seems to follow the standard.
+
+  2016-03-23: Florent Matignon
+  * dhcp.c: fixed bug #38203: DHCP options are not recorded in all DHCP ack messages
+
+  2016-03-22: Simon Goldschmidt
+  * tcp: changed accept handling to be done internally: the application does not
+    have to call tcp_accepted() any more. Instead, when delaying accept (e.g. sockets
+    do), call tcp_backlog_delayed()/tcp_backlog_accepted() (fixes bug #46696)
+
+  2016-03-22: Simon Goldschmidt
+  * dns.c: ignore dns response parsing errors, only abort resolving for correct
+    responses or error responses from correct server (bug #47459)
+
+  2016-03-17: Simon Goldschmidt
+  * api_msg.c: fixed bug #47448 (netconn/socket leak if RST is received during close)
+
+  2016-03-17: Joel Cunningham
+  * api_msg.c: don't fail closing a socket/netconn when failing to allocate the
+    FIN segment; blocking the calling thread for a while is better than risking
+    leaking a netconn/socket (see bug #46701)
+
+  2016-03-16: Joel Cunningham
+  * tcp_out.c: reset rto timer on fast retransmission
+
+  2016-03-16: Deomid Ryabkov
+  * tcp_out.c: fixed bug #46384 Segment size calculation bug with MSS != TCP_MSS
 
   2016-03-05: Simon Goldschmidt
   * err.h/.c, sockets.c: ERR_IF is not necessarily a fatal error

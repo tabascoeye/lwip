@@ -1,3 +1,8 @@
+/**
+ * @file
+ * netif API (to be used from non-TCPIP threads)
+ */
+
 /*
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
@@ -35,6 +40,7 @@
 #include "lwip/netif.h"
 #include "lwip/dhcp.h"
 #include "lwip/autoip.h"
+#include "lwip/priv/tcpip_priv.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,10 +56,7 @@ typedef void (*netifapi_void_fn)(struct netif *netif);
 typedef err_t (*netifapi_errt_fn)(struct netif *netif);
 
 struct netifapi_msg {
-#if !LWIP_TCPIP_CORE_LOCKING
-  sys_sem_t sem;
-#endif /* !LWIP_TCPIP_CORE_LOCKING */
-  err_t err;
+  struct tcpip_api_call_data call;
   struct netif *netif;
   union {
     struct {

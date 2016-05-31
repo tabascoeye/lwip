@@ -1,3 +1,8 @@
+/**
+ * @file
+ * netconn API (to be used from non-TCPIP threads)
+ */
+
 /*
  * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
  * All rights reserved.
@@ -65,9 +70,6 @@ extern "C" {
 #define NETCONN_FLAG_NON_BLOCKING             0x02
 /** Was the last connect action a non-blocking one? */
 #define NETCONN_FLAG_IN_NONBLOCKING_CONNECT   0x04
-/** If this is set, a TCP netconn must call netconn_recved() to update
-    the TCP receive window (done automatically if not set). */
-#define NETCONN_FLAG_NO_AUTO_RECVED           0x08
 /** If a nonblocking write has been rejected before, poll_tcp needs to
     check if the netconn is writable again */
 #define NETCONN_FLAG_CHECK_WRITESPACE         0x10
@@ -160,7 +162,7 @@ struct tcp_pcb;
 struct udp_pcb;
 struct raw_pcb;
 struct netconn;
-struct api_msg_msg;
+struct api_msg;
 
 /** A callback prototype to inform about events for a netconn */
 typedef void (* netconn_callback)(struct netconn *, enum netconn_evt, u16_t len);
@@ -228,7 +230,7 @@ struct netconn {
   /** TCP: when data passed to netconn_write doesn't fit into the send buffer,
       this temporarily stores the message.
       Also used during connect and close. */
-  struct api_msg_msg *current_msg;
+  struct api_msg *current_msg;
 #endif /* LWIP_TCP */
   /** A callback function that is informed about events for this netconn */
   netconn_callback callback;
@@ -271,7 +273,6 @@ err_t   netconn_listen_with_backlog(struct netconn *conn, u8_t backlog);
 err_t   netconn_accept(struct netconn *conn, struct netconn **new_conn);
 err_t   netconn_recv(struct netconn *conn, struct netbuf **new_buf);
 err_t   netconn_recv_tcp_pbuf(struct netconn *conn, struct pbuf **new_buf);
-void    netconn_recved(struct netconn *conn, u32_t length);
 err_t   netconn_sendto(struct netconn *conn, struct netbuf *buf,
                              const ip_addr_t *addr, u16_t port);
 err_t   netconn_send(struct netconn *conn, struct netbuf *buf);
@@ -306,14 +307,6 @@ err_t   netconn_gethostbyname(const char *name, ip_addr_t *addr);
   (conn)->flags &= ~ NETCONN_FLAG_NON_BLOCKING; }} while(0)
 /** Get the blocking status of netconn calls (@todo: write/send is missing) */
 #define netconn_is_nonblocking(conn)        (((conn)->flags & NETCONN_FLAG_NON_BLOCKING) != 0)
-
-/** TCP: Set the no-auto-recved status of netconn calls (see NETCONN_FLAG_NO_AUTO_RECVED) */
-#define netconn_set_noautorecved(conn, val)  do { if(val) { \
-  (conn)->flags |= NETCONN_FLAG_NO_AUTO_RECVED; \
-} else { \
-  (conn)->flags &= ~ NETCONN_FLAG_NO_AUTO_RECVED; }} while(0)
-/** TCP: Get the no-auto-recved status of netconn calls (see NETCONN_FLAG_NO_AUTO_RECVED) */
-#define netconn_get_noautorecved(conn)        (((conn)->flags & NETCONN_FLAG_NO_AUTO_RECVED) != 0)
 
 #if LWIP_IPV6
 /** TCP: Set the IPv6 ONLY status of netconn calls (see NETCONN_FLAG_IPV6_V6ONLY) */

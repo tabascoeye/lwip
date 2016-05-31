@@ -126,9 +126,12 @@ namespace LwipMibCompiler
 				// let the tree transform itself depending on node structure
 				snmpMib.Analyze();
 
-				// generate code from LWIP object tree
-				Console.WriteLine(" Generating code " + snmpMib.Name);
-				snmpMib.Generate(generatedFile, generatedHeaderFile);
+				if (snmpMib.ChildNodes.Count != 0)
+				{
+					// generate code from LWIP object tree
+					Console.WriteLine(" Generating code " + snmpMib.Name);
+					snmpMib.Generate(generatedFile, generatedHeaderFile);
+				}
 			}
 
 			string preservedCode = MibCFile.GetPreservedCode(destFile);
@@ -215,7 +218,7 @@ namespace LwipMibCompiler
 		private static SnmpTreeNode GenerateSnmpTreeNode(MibTreeNode mibTreeNode, SnmpTreeNode parentNode)
 		{
 			SnmpTreeNode result = new SnmpTreeNode(parentNode);
-			result.Name    = _alphaNumericRegex.Replace(mibTreeNode.Entity.Name, "").ToLowerInvariant();
+			result.Name    = _alphaNumericRegex.Replace (mibTreeNode.Entity.Name, "");
 			result.Oid     = mibTreeNode.Entity.Value;
 			result.FullOid = MibTypesResolver.ResolveOid(mibTreeNode.Entity).GetOidString();
 
@@ -337,7 +340,7 @@ namespace LwipMibCompiler
 				}
 			}
 
-			result.Name = _alphaNumericRegex.Replace(ote.Name, "").ToLowerInvariant();
+			result.Name = _alphaNumericRegex.Replace(ote.Name, "");
 			result.Oid  = ote.Value;
 
 			if (ote.Access == MaxAccess.readWrite)

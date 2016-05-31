@@ -55,10 +55,6 @@
 #include "lwip/ip_frag.h"
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
-#include "netif/ppp/ppp.h"
-#include "netif/ppp/pppos.h"
-#include "netif/ppp/pppoe.h"
-#include "netif/ppp/pppol2tp.h"
 #include "lwip/nd6.h"
 #include "lwip/ip6_frag.h"
 #include "lwip/mld6.h"
@@ -67,6 +63,9 @@
 #include "lwip/priv/tcp_priv.h"
 #include "lwip/priv/tcpip_priv.h"
 #include "lwip/netifapi.h"
+
+/* needed by MEMP_NUM_SYS_TIMEOUT */
+#include "netif/ppp/ppp_opts.h"
 
 #include <string.h>
 

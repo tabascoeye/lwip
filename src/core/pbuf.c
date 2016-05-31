@@ -348,7 +348,7 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
 #if LWIP_SUPPORT_CUSTOM_PBUF
 /** Initialize a custom pbuf (already allocated).
  *
- * @param layer flag to define header size
+ * @param l flag to define header size
  * @param length size of the pbuf's payload
  * @param type type of the pbuf (only used to treat the pbuf accordingly, as
  *        this function allocates no memory)
@@ -543,9 +543,9 @@ pbuf_header_impl(struct pbuf *p, s16_t header_size_increment, u8_t force)
     p->payload = (u8_t *)p->payload - header_size_increment;
     /* boundary check fails? */
     if ((u8_t *)p->payload < (u8_t *)p + SIZEOF_STRUCT_PBUF) {
-      LWIP_DEBUGF( PBUF_DEBUG | LWIP_DBG_LEVEL_SERIOUS,
+      LWIP_DEBUGF( PBUF_DEBUG | LWIP_DBG_TRACE,
         ("pbuf_header: failed as %p < %p (not enough space for new header size)\n",
-        (void *)p->payload, (void *)(p + 1)));
+        (void *)p->payload, (void *)((u8_t *)p + SIZEOF_STRUCT_PBUF)));
       /* restore old payload pointer */
       p->payload = payload;
       /* bail out unsuccessfully */
@@ -1110,6 +1110,7 @@ pbuf_take(struct pbuf *buf, const void *dataptr, u16_t len)
  * @param buf pbuf to fill with data
  * @param dataptr application supplied data buffer
  * @param len length of the application supplied data buffer
+ * @param offset offset in pbuf where to copy dataptr to
  *
  * @return ERR_OK if successful, ERR_MEM if the pbuf is not big enough
  */

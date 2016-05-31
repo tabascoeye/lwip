@@ -40,7 +40,7 @@
  * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include "lwip/opt.h"
+#include "netif/ppp/ppp_opts.h"
 #if PPP_SUPPORT /* don't build if not configured for use in lwipopts.h */
 
 /*
@@ -2393,7 +2393,7 @@ static int lcp_printpkt(const u_char *p, int plen,
     if (len < HEADERLEN || len > plen)
 	return 0;
 
-   if (code >= 1 && code <= (int)sizeof(lcp_codenames) / (int)sizeof(char *))
+   if (code >= 1 && code <= (int)LWIP_ARRAYSIZE(lcp_codenames))
 	printer(arg, " %s", lcp_codenames[code-1]);
     else
 	printer(arg, " code=0x%x", code);

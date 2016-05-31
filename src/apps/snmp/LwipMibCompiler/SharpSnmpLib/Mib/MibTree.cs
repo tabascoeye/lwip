@@ -27,16 +27,7 @@ namespace Lextm.SharpSnmpLib.Mib
                     }
                 }
 
-                // gather all items below ModuleIdentity
-                foreach (MibTreeNode mibTreeNode in _root)
-                {
-					entities.Remove (mibTreeNode.Entity);
-                    BuildTree(mibTreeNode, entities);
-                    UpdateTreeNodeTypes(mibTreeNode);
-                }
-
                 // find OID assignments as root, if there are any that are not below ModuleIdentity
-                // FIXME: There may be multiple OID assignments that create a tree (find the root ones!)
                 foreach (IEntity element in entities)
                 {
                     OidValueAssignment oa = element as OidValueAssignment;
@@ -45,6 +36,13 @@ namespace Lextm.SharpSnmpLib.Mib
                     {
                         _root.Add(new MibTreeNode(null, oa));
                     }
+                }
+
+                FilterRealRoots (entities);
+
+                foreach (MibTreeNode mibTreeNode in _root)
+                {
+                    entities.Remove (mibTreeNode.Entity);
                 }
 
                 if (_root.Count == 0)
@@ -70,8 +68,35 @@ namespace Lextm.SharpSnmpLib.Mib
             get { return _root; }
         }
 
+        private bool EntityExists(IList<IEntity> entities, string name)
+		{
+            foreach(IEntity entity in entities)
+			{
+                if (entity.Name == name)
+				{
+                    return true;
+                }
+            }
+            return false;
+        }
 
-        private void BuildTree(MibTreeNode node, IList<IEntity> entities)
+        private void FilterRealRoots(IList<IEntity> entities)
+        {
+            int i = 0;
+            while (i < _root.Count)
+			{
+                if (EntityExists(entities, _root[i].Entity.Parent))
+                {
+                    _root.RemoveAt(i);
+                }
+                else
+                {
+                    i++;
+                }
+            }
+		}
+		
+		private void BuildTree(MibTreeNode node, IList<IEntity> entities)
         {
             int i = 0;
             while (i < entities.Count)

@@ -164,8 +164,6 @@ udp_input_local_match(struct udp_pcb *pcb, struct netif *inp, u8_t broadcast)
 
   /* Only need to check PCB if incoming IP version matches PCB IP version */
   if(IP_ADDR_PCB_VERSION_MATCH_EXACT(pcb, ip_current_dest_addr())) {
-    LWIP_ASSERT("UDP PCB: inconsistent local/remote IP versions", IP_IS_V6_VAL(pcb->local_ip) == IP_IS_V6_VAL(pcb->remote_ip));
-
 #if LWIP_IPV4
     /* Special case: IPv4 broadcast: all or broadcasts in my subnet
      * Note: broadcast variable can only be 1 if it is an IPv4 broadcast */
@@ -276,8 +274,13 @@ udp_input(struct pbuf *p, struct netif *inp)
     /* compare PCB local addr+port to UDP destination addr+port */
     if ((pcb->local_port == dest) &&
         (udp_input_local_match(pcb, inp, broadcast) != 0)) {
-      if ((uncon_pcb == NULL) &&
-          ((pcb->flags & UDP_FLAGS_CONNECTED) == 0)) {
+      if (((pcb->flags & UDP_FLAGS_CONNECTED) == 0) &&
+          ((uncon_pcb == NULL)
+#if SO_REUSE
+          /* prefer specific IPs over cath-all */
+          || !ip_addr_isany(&pcb->local_ip)
+#endif /* SO_REUSE */
+          )) {
         /* the first unconnected matching PCB */
         uncon_pcb = pcb;
       }
@@ -646,8 +649,10 @@ udp_sendto_if_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_i
   else
 #endif /* LWIP_IPV4 && LWIP_IPV6 */
 #if LWIP_IPV4
-  if (ip4_addr_isany(ip_2_ip4(&pcb->local_ip))) {
-    /* use outgoing network interface IP address as source address */
+  if (ip4_addr_isany(ip_2_ip4(&pcb->local_ip)) ||
+      ip4_addr_ismulticast(ip_2_ip4(&pcb->local_ip))) {
+    /* if the local_ip is any or multicast
+     * use the outgoing network interface IP address as source address */
     src_ip = netif_ip_addr4(netif);
   } else {
     /* check if UDP PCB local IP address is correct
@@ -698,7 +703,7 @@ udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *d
   /* broadcast filter? */
   if (!ip_get_option(pcb, SOF_BROADCAST) &&
 #if LWIP_IPV6
-      !IP_IS_V6(dst_ip) &&
+      IP_IS_V4(dst_ip) &&
 #endif /* LWIP_IPV6 */
       ip_addr_isbroadcast(dst_ip, netif)) {
     LWIP_DEBUGF(UDP_DEBUG | LWIP_DBG_LEVEL_SERIOUS,
@@ -940,11 +945,9 @@ udp_bind(struct udp_pcb *pcb, const ip_addr_t *ipaddr, u16_t port)
 #endif /* SO_REUSE */
         {
           /* port matches that of PCB in list and REUSEADDR not set -> reject */
-          if ((ipcb->local_port == port) && (IP_IS_V6(ipaddr) == IP_IS_V6_VAL(ipcb->local_ip)) &&
-              /* IP address matches, or one is IP_ADDR_ANY? */
-                (ip_addr_isany(&ipcb->local_ip) ||
-                 ip_addr_isany(ipaddr) ||
-                 ip_addr_cmp(&ipcb->local_ip, ipaddr))) {
+          if ((ipcb->local_port == port) &&
+              /* IP address matches? */
+              ip_addr_cmp(&ipcb->local_ip, ipaddr)) {
             /* other PCB already binds to this local IP and port */
             LWIP_DEBUGF(UDP_DEBUG,
                         ("udp_bind: local port %"U16_F" already bound by another pcb\n", port));
@@ -993,7 +996,7 @@ udp_connect(struct udp_pcb *pcb, const ip_addr_t *ipaddr, u16_t port)
 {
   struct udp_pcb *ipcb;
 
-  if ((pcb == NULL) || (ipaddr == NULL) || !IP_ADDR_PCB_VERSION_MATCH_EXACT(pcb, ipaddr)) {
+  if ((pcb == NULL) || (ipaddr == NULL) || !IP_ADDR_PCB_VERSION_MATCH(pcb, ipaddr)) {
     return ERR_VAL;
   }
 
@@ -1035,7 +1038,15 @@ void
 udp_disconnect(struct udp_pcb *pcb)
 {
   /* reset remote address association */
-  ip_addr_set_any(IP_IS_V6_VAL(pcb->remote_ip), &pcb->remote_ip);
+#if LWIP_IPV4 && LWIP_IPV6
+  if(IP_IS_ANY_TYPE_VAL(pcb->local_ip)) {
+    ip_addr_copy(pcb->remote_ip, *IP_ANY_TYPE);
+  } else {
+#endif
+    ip_addr_set_any(IP_IS_V6_VAL(pcb->remote_ip), &pcb->remote_ip);
+#if LWIP_IPV4 && LWIP_IPV6
+  }
+#endif
   pcb->remote_port = 0;
   /* mark PCB as unconnected */
   pcb->flags &= ~UDP_FLAGS_CONNECTED;
@@ -1156,7 +1167,7 @@ void udp_netif_ipv4_addr_changed(const ip4_addr_t* old_addr, const ip4_addr_t* n
   if (!ip4_addr_isany(new_addr)) {
     for (upcb = udp_pcbs; upcb != NULL; upcb = upcb->next) {
       /* Is this an IPv4 pcb? */
-      if (!IP_IS_V6_VAL(upcb->local_ip)) {
+      if (IP_IS_V4_VAL(upcb->local_ip)) {
         /* PCB bound to current local interface address? */
         if (!ip4_addr_isany(ip_2_ip4(&upcb->local_ip)) &&
             ip4_addr_cmp(ip_2_ip4(&upcb->local_ip), old_addr)) {
